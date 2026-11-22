@@ -42,6 +42,7 @@ std::unordered_map<AppConfig::Item, AppConfig::Option> AppConfig::settingMap = {
     // "h264" | "hevc" — the transcode targets the console can actually decode
     {TRANSCODEC, {"transcodec", {"h264", "hevc"}}},
     {PLAYBACK_MODE, {"playback_mode", {"auto", "direct", "transcode"}}},
+    {PLAYBACK_QUALITY_OVERRIDES, {"playback_quality_overrides"}},
     {PLAYER_MAX_RESOLUTION,
         {
             "player_max_resolution",
@@ -377,6 +378,28 @@ std::string AppConfig::activeServerId() const {
     auto profile = std::find_if(this->users.begin(), this->users.end(),
         [this](const AppUser& u) { return u.id == this->user_id; });
     return profile != this->users.end() ? profile->server_id : std::string{};
+}
+
+int64_t AppConfig::playbackQualityFor(const std::string& key) {
+    if (key.empty()) return 0;
+    nlohmann::json all = this->getItem(PLAYBACK_QUALITY_OVERRIDES, nlohmann::json::object());
+    if (!all.is_object()) return 0;
+    auto it = all.find(key);
+    if (it == all.end() || !it->is_number()) return 0;
+    return it->get<int64_t>();
+}
+
+void AppConfig::setPlaybackQualityFor(const std::string& key, int64_t bps) {
+    if (key.empty()) return;
+    nlohmann::json all = this->getItem(PLAYBACK_QUALITY_OVERRIDES, nlohmann::json::object());
+    if (!all.is_object()) all = nlohmann::json::object();
+    if (bps > 0)
+        all[key] = bps;
+    else if (all.contains(key))
+        all.erase(key);  // "Auto" in the menu: back to Settings → Playback
+    else
+        return;  // nothing stored, nothing to write
+    this->setItem(PLAYBACK_QUALITY_OVERRIDES, all);
 }
 
 std::string AppConfig::getToken() const {

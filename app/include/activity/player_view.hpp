@@ -98,10 +98,13 @@ private:
     /// rescued playback, later reloads stay on it. Cleared when the user picks a
     /// quality (toggleQuality).
     int64_t fallbackBitrate = 0;
-    /// quality tier picked in the player for THIS playback (0 = follow the mode).
-    /// Deliberately not persisted: a remembered cap turned every later playback
-    /// into a transcode, which is what made the first open take seconds.
+    /// quality tier picked in the player for THIS title (0 = follow the mode).
+    /// Persisted per title by AppConfig::setPlaybackQualityFor: one pick used to be a
+    /// process-wide default, which turned every later video into a transcode.
     int64_t qualityCap = 0;
+    /// "<server>/<titleId>" the cap above is stored under — the show for an
+    /// episode, so every episode shares it. Empty when the item has no id.
+    std::string qualityKey;
     /// set by tryPlainUrlFallback: later reloads stay on the bare part URL
     bool plainPartUrl = false;
     std::vector<plex::Item> episodes;

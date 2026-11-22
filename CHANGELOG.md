@@ -11,9 +11,12 @@
   its own. The resolution limit is now that mode's parameter (a threshold under
   Auto, the output height under Transcode) and is hidden in Always direct, together
   with the codec row.
-- **The quality tier picked in the player now lasts for that playback only.** It
-  used to be written to `config.json`, so one selection silently turned every later
-  video into a transcode — the usual reason a library took seconds to open.
+- **The quality tier picked in the player is remembered per title** — the whole show,
+  for an episode. A resume, the next episode, or a fresh open from the library all
+  play the way it was chosen. It used to be one global value in `config.json`, which
+  turned every later video into a transcode; the override now lives in
+  `playback_quality_overrides`, keyed by connection + title id, and picking "Auto"
+  forgets it.
 - **The codec row is wired**: H.264 or HEVC reaches the transcoder (`opts.videoCodec`
   was hard-coded to h264). AV1 is gone — the console has no AV1 decoder, so choosing
   it only ever meant software decoding.

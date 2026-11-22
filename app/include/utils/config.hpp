@@ -163,6 +163,12 @@ public:
         /// Replaced FORCE_DIRECTPLAY + PLAYER_RESOLUTION_LIMIT, which gated each
         /// other (see AppConfig::init).
         PLAYBACK_MODE,
+        /// Per-title quality overrides: `{"<server>/<titleId>": bps}`, written by the
+        /// in-player quality menu (0 or an absent key = follow PLAYBACK_MODE). Keyed by
+        /// title so a resume, or the next episode of the same show, plays the way it was
+        /// chosen — but never leaks to another title, which is what a single global
+        /// remembered cap did.
+        PLAYBACK_QUALITY_OVERRIDES,
         PLAYER_MAX_RESOLUTION,
         OSD_ON_TOGGLE,
         TOUCH_GESTURE,
@@ -271,6 +277,12 @@ public:
         this->setting[o.key] = data;
         this->save();
     }
+
+    /// Quality override for one title, in bps (0 = none, follow PLAYBACK_MODE).
+    /// `key` is "<server>/<titleId>" — see PlayerView::qualityKey.
+    int64_t playbackQualityFor(const std::string& key);
+    /// Stores (bps > 0) or clears (bps <= 0) the override for one title.
+    void setPlaybackQualityFor(const std::string& key, int64_t bps);
 
     struct Option {
         std::string key;

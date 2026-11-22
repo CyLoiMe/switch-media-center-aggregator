@@ -148,6 +148,15 @@ PlayerView::PlayerView(const plex::Item& item, const int64_t seekMs, int version
         }
     });
 
+    // The quality choice belongs to the TITLE, not to the entry point: what was
+    // picked while watching this show is what a resume — or the next episode — and a
+    // fresh open from the library all use. Episodes share their show's key, and the
+    // key carries the connection because two servers can hand out the same id.
+    const std::string& scope = item.grandparentRatingKey.empty() ? item.ratingKey : item.grandparentRatingKey;
+    const std::string server = AppConfig::instance().activeServerId();
+    if (!scope.empty()) this->qualityKey = server.empty() ? scope : server + "/" + scope;
+    this->qualityCap = AppConfig::instance().playbackQualityFor(this->qualityKey);
+
     this->playMedia(seekMs > 0 ? seekMs : item.viewOffset);
 
     // Report stop when application exit
@@ -325,7 +334,7 @@ void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t f
     // Policy order, first match wins:
     //   1. an explicit rescue bitrate (a failed attempt being retried),
     //   2. a remote source: direct only (see above),
-    //   3. the tier picked in the player for THIS playback,
+    //   3. the tier picked for THIS title (remembered; see qualityCap),
     //   4. Settings → Playback: always transcode / auto (transcode only above the
     //      resolution limit; 0 = no limit). Direct mode leaves the cap at 0.
     if (forceBitrate > 0) {
@@ -333,6 +342,10 @@ void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t f
     } else if (remote || directMode) {
         opts.bitrateCap = 0;
     } else if (this->qualityCap > 0) {
+        // The tier remembered for this title (the show, for an episode): honoured as
+        // stored, because an explicit choice must not be second-guessed — a stale one
+        // (the file was replaced) can only cost one re-encode, and the menu's "Auto"
+        // clears it.
         opts.bitrateCap = this->qualityCap;
     } else if (this->fallbackBitrate > 0) {
         // a transcode already rescued this playback: stay on it until the user
@@ -635,9 +648,11 @@ bool PlayerView::toggleQuality() {
     brls::Dropdown* dropdown = new brls::Dropdown(
         "main/player/quality"_i18n, options,
         [this, values](int selected) {
-            // This playback only: the persistent policy is Settings → Playback, and
-            // a remembered tier used to turn every later open into a transcode.
+            // Remembered for this title (the whole show, for an episode), so opening
+            // it again from Continue Watching does not re-decide differently from the
+            // library. "Auto" stores 0, i.e. it forgets the override.
             this->qualityCap = values[selected];
+            AppConfig::instance().setPlaybackQualityFor(this->qualityKey, this->qualityCap);
             this->fallbackBitrate = 0;
             MPVCore::instance().getCustomEvent()->fire(QUALITY_CHANGE, nullptr);
             return true;
