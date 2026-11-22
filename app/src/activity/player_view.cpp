@@ -152,10 +152,13 @@ PlayerView::PlayerView(const plex::Item& item, const int64_t seekMs, int version
     // picked while watching this show is what a resume — or the next episode — and a
     // fresh open from the library all use. Episodes share their show's key, and the
     // key carries the connection because two servers can hand out the same id.
-    const std::string& scope = item.grandparentRatingKey.empty() ? item.ratingKey : item.grandparentRatingKey;
+    const bool seriesScope = !item.grandparentRatingKey.empty();
+    const std::string& scope = seriesScope ? item.grandparentRatingKey : item.ratingKey;
+    const std::string& scopeTitle = seriesScope ? item.grandparentTitle : item.title;
     const std::string server = AppConfig::instance().activeServerId();
     if (!scope.empty()) this->qualityKey = server.empty() ? scope : server + "/" + scope;
-    this->qualityCap = AppConfig::instance().playbackQualityFor(this->qualityKey);
+    this->qualityTitle = scopeTitle;
+    this->qualityCap = AppConfig::instance().playbackQualityFor(this->qualityKey, this->qualityTitle);
 
     this->playMedia(seekMs > 0 ? seekMs : item.viewOffset);
 
@@ -652,7 +655,7 @@ bool PlayerView::toggleQuality() {
             // it again from Continue Watching does not re-decide differently from the
             // library. "Auto" stores 0, i.e. it forgets the override.
             this->qualityCap = values[selected];
-            AppConfig::instance().setPlaybackQualityFor(this->qualityKey, this->qualityCap);
+            AppConfig::instance().setPlaybackQualityFor(this->qualityKey, this->qualityTitle, this->qualityCap);
             this->fallbackBitrate = 0;
             MPVCore::instance().getCustomEvent()->fire(QUALITY_CHANGE, nullptr);
             return true;

@@ -16,7 +16,10 @@
   play the way it was chosen. It used to be one global value in `config.json`, which
   turned every later video into a transcode; the override now lives in
   `playback_quality_overrides`, keyed by connection + title id, and picking "Auto"
-  forgets it.
+  forgets it. The store keeps itself in order: an entry records the title it was
+  chosen for (a recycled Plex ratingKey is dropped instead of being applied to a
+  different film), entries of a deleted connection are pruned, and the map is capped
+  at 200 — the oldest write leaves first.
 - **The codec row is wired**: H.264 or HEVC reaches the transcoder (`opts.videoCodec`
   was hard-coded to h264). AV1 is gone — the console has no AV1 decoder, so choosing
   it only ever meant software decoding.

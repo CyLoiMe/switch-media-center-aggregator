@@ -279,10 +279,14 @@ public:
     }
 
     /// Quality override for one title, in bps (0 = none, follow PLAYBACK_MODE).
-    /// `key` is "<server>/<titleId>" — see PlayerView::qualityKey.
-    int64_t playbackQualityFor(const std::string& key);
+    /// `key` is "<server>/<titleId>", `title` the name it was chosen for — an entry
+    /// whose title no longer matches is dropped (a recycled id must not inherit it).
+    int64_t playbackQualityFor(const std::string& key, const std::string& title);
     /// Stores (bps > 0) or clears (bps <= 0) the override for one title.
-    void setPlaybackQualityFor(const std::string& key, int64_t bps);
+    void setPlaybackQualityFor(const std::string& key, const std::string& title, int64_t bps);
+    /// Drops entries whose connection no longer exists. Called at startup and after
+    /// removeServer(), so deleting a server also deletes the caps it left behind.
+    void prunePlaybackQuality();
 
     struct Option {
         std::string key;

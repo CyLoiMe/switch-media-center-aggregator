@@ -6,6 +6,7 @@
 #include <borealis.hpp>
 #include <borealis/core/cache_helper.hpp>
 #include <algorithm>
+#include <ctime>
 #include <borealis/views/edit_text_dialog.hpp>
 #include "api/plex/auth.hpp"
 #include "api/backend.hpp"
@@ -244,6 +245,9 @@ bool AppConfig::init() {
     MPVCore::VIDEO_CODEC = this->getItem(TRANSCODEC, MPVCore::VIDEO_CODEC);
     if (MPVCore::VIDEO_CODEC != "hevc") MPVCore::VIDEO_CODEC = "h264";
     this->setItem(TRANSCODEC, MPVCore::VIDEO_CODEC);
+    // Removed connections leave their per-title caps behind: drop them at startup,
+    // when the server list is known (removeServer() does the same on the spot).
+    this->prunePlaybackQuality();
     MPVCore::AUDIO_CHANNELS = this->getItem(AUDIO_CHANNELS, MPVCore::AUDIO_CHANNELS);
     // 初始化自定义的硬件加速方案
     MPVCore::PLAYER_HWDEC_METHOD = this->getItem(PLAYER_HWDEC_CUSTOM, MPVCore::PLAYER_HWDEC_METHOD);
@@ -380,26 +384,106 @@ std::string AppConfig::activeServerId() const {
     return profile != this->users.end() ? profile->server_id : std::string{};
 }
 
-int64_t AppConfig::playbackQualityFor(const std::string& key) {
+namespace {
+
+/// One entry of playback_quality_overrides. `title` is what makes a recycled id safe:
+/// Plex hands its numeric ratingKey out again after a delete, and a new title must not
+/// inherit the old cap. `at` = unix time of the write, 0 for entries from before
+/// 2026-11-22 (they are the first to be evicted).
+struct QualityOverride {
+    int64_t cap = 0;
+    std::string title;
+    int64_t at = 0;
+};
+
+/// Reads either shape: {"cap":…,"title":…,"at":…} or the legacy bare number.
+QualityOverride readQualityOverride(const nlohmann::json& v) {
+    QualityOverride q;
+    try {
+        if (v.is_number()) {
+            q.cap = v.get<int64_t>();
+        } else if (v.is_object()) {
+            if (v.contains("cap") && v["cap"].is_number()) q.cap = v["cap"].get<int64_t>();
+            if (v.contains("title") && v["title"].is_string()) q.title = v["title"].get<std::string>();
+            if (v.contains("at") && v["at"].is_number()) q.at = v["at"].get<int64_t>();
+        }
+    } catch (const std::exception& ex) {
+        brls::Logger::warning("quality override: {}", ex.what());
+    }
+    return q;
+}
+
+/// Entries kept before the oldest write is dropped: 200 titles × ~80 bytes ≈ 16 KB.
+constexpr size_t QUALITY_OVERRIDES_MAX = 200;
+
+}  // namespace
+
+int64_t AppConfig::playbackQualityFor(const std::string& key, const std::string& title) {
     if (key.empty()) return 0;
     nlohmann::json all = this->getItem(PLAYBACK_QUALITY_OVERRIDES, nlohmann::json::object());
     if (!all.is_object()) return 0;
     auto it = all.find(key);
-    if (it == all.end() || !it->is_number()) return 0;
-    return it->get<int64_t>();
+    if (it == all.end()) return 0;
+    const QualityOverride q = readQualityOverride(*it);
+    // The id now names something else (a recycled Plex ratingKey, or the file was
+    // replaced): forget the cap rather than applying it to a stranger.
+    if (!q.title.empty() && !title.empty() && q.title != title) {
+        all.erase(it);
+        this->setItem(PLAYBACK_QUALITY_OVERRIDES, all);
+        brls::Logger::info("quality override {} dropped: stored for \"{}\", now \"{}\"", key, q.title, title);
+        return 0;
+    }
+    return q.cap;
 }
 
-void AppConfig::setPlaybackQualityFor(const std::string& key, int64_t bps) {
+void AppConfig::setPlaybackQualityFor(const std::string& key, const std::string& title, int64_t bps) {
     if (key.empty()) return;
     nlohmann::json all = this->getItem(PLAYBACK_QUALITY_OVERRIDES, nlohmann::json::object());
     if (!all.is_object()) all = nlohmann::json::object();
-    if (bps > 0)
-        all[key] = bps;
-    else if (all.contains(key))
+    if (bps > 0) {
+        nlohmann::json entry = {{"cap", bps}, {"at", (int64_t)std::time(nullptr)}};
+        if (!title.empty()) entry["title"] = title;
+        all[key] = entry;
+        // Bounded: the oldest write leaves first, so the file cannot grow forever.
+        while (all.size() > QUALITY_OVERRIDES_MAX) {
+            auto oldest = all.begin();
+            int64_t oldestAt = readQualityOverride(*oldest).at;
+            for (auto it = all.begin(); it != all.end(); ++it) {
+                const int64_t at = readQualityOverride(*it).at;
+                if (at < oldestAt) {
+                    oldestAt = at;
+                    oldest = it;
+                }
+            }
+            all.erase(oldest);
+        }
+    } else if (all.contains(key)) {
         all.erase(key);  // "Auto" in the menu: back to Settings → Playback
-    else
+    } else {
         return;  // nothing stored, nothing to write
+    }
     this->setItem(PLAYBACK_QUALITY_OVERRIDES, all);
+}
+
+void AppConfig::prunePlaybackQuality() {
+    nlohmann::json all = this->getItem(PLAYBACK_QUALITY_OVERRIDES, nlohmann::json::object());
+    if (!all.is_object() || all.empty()) return;
+    const size_t before = all.size();
+    for (auto it = all.begin(); it != all.end();) {
+        const std::string key = it.key();
+        const auto slash = key.find('/');
+        const std::string server = slash == std::string::npos ? std::string{} : key.substr(0, slash);
+        const bool known = !server.empty() && std::any_of(this->servers.begin(), this->servers.end(),
+                                             [&server](const AppServer& s) { return s.id == server; });
+        if (known)
+            ++it;
+        else
+            it = all.erase(it);  // connection deleted, or config from another install
+    }
+    if (all.size() != before) {
+        brls::Logger::info("quality overrides: {} entries of removed connections dropped", before - all.size());
+        this->setItem(PLAYBACK_QUALITY_OVERRIDES, all);
+    }
 }
 
 std::string AppConfig::getToken() const {
@@ -822,6 +906,8 @@ bool AppConfig::removeServer(const std::string& id) {
         if (it->id == id) {
             this->servers.erase(it);
             this->save();
+            // Its per-title quality overrides are dead weight from here on.
+            this->prunePlaybackQuality();
             return this->servers.empty();
         }
     }

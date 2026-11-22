@@ -105,6 +105,10 @@ private:
     /// "<server>/<titleId>" the cap above is stored under — the show for an
     /// episode, so every episode shares it. Empty when the item has no id.
     std::string qualityKey;
+    /// Name the cap was chosen for (the show, for an episode): stored with the entry
+    /// so a recycled id — Plex hands its numeric ratingKey out again — is dropped
+    /// instead of being applied to a different title.
+    std::string qualityTitle;
     /// set by tryPlainUrlFallback: later reloads stay on the bare part URL
     bool plainPartUrl = false;
     std::vector<plex::Item> episodes;
