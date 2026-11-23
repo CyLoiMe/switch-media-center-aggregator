@@ -42,6 +42,17 @@
 
 ### Fixed
 
+- **Direct play uses the URL the server hands out, for local sources too.** The
+  hand-built `/Videos/{id}/stream?static=true` is answered whole-file by some Emby
+  versions: the client asks for `Range: bytes=995952-` and gets
+  `Content-Range: bytes 0-227300385/227300386` back. A stream that ignores Range
+  forces the player to read the entire file before the first frame — a 227 MB
+  episode took 20 s over Wi-Fi (227 MB ÷ 11 MB/s, i.e. the whole file) and the
+  resume offset was silently lost. The backend now asks PlaybackInfo once per
+  title and plays the server's own `DirectStreamUrl` (`/videos/{id}/original.*`),
+  which is what Emby's web client uses and which honours Range. Cached per title,
+  so a resume or a quality switch costs no extra request; any failure falls back
+  to the built URL.
 - **Switching to a connection that only has a LAN address no longer inherits the
   previous connection's URL.** `addServer()` promoted the *ambient* `server_url`
   into that server's candidate list instead of the address it was handed; with an

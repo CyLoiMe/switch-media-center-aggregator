@@ -17,6 +17,7 @@
 #include <borealis/core/logger.hpp>
 #include <borealis/core/i18n.hpp>
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <optional>
 #include <sstream>
@@ -26,6 +27,13 @@ using namespace brls::literals;  // hub titles localized like the rest of the UI
 namespace jellyfin {
 
 namespace {
+
+/// A URL with its query string cut off: enough to tell endpoints apart in a log,
+/// and an api_key is never part of what gets written down.
+std::string urlPath(const std::string& url) {
+    const auto q = url.find('?');
+    return q == std::string::npos ? url : url.substr(0, q);
+}
 
 std::string userId() { return AppConfig::instance().getUserId(); }
 std::string base() { return AppConfig::instance().getUrl(); }
@@ -743,6 +751,25 @@ void JellyfinBackend::markUnwatched(const std::string& id) {
 
 // ---- playback ------------------------------------------------------------------
 
+std::string JellyfinBackend::serverDirectUrl(const std::string& itemId, const std::string& sourceId,
+    const std::string& tok) const {
+    if (itemId.empty() || sourceId.empty()) return {};
+    const std::string key = itemId + "/" + sourceId;
+    {
+        std::lock_guard<std::mutex> lock(this->serverDirectUrlsMutex);
+        auto it = this->serverDirectUrls.find(key);
+        if (it != this->serverDirectUrls.end()) return it->second;
+    }
+    const std::string url = playbackInfoUrl(itemId, sourceId, tok).direct;
+    // Not cached when empty: a failed PlaybackInfo must be retried next time rather
+    // than remembered as "this title has no URL".
+    if (url.empty()) return {};
+    std::lock_guard<std::mutex> lock(this->serverDirectUrlsMutex);
+    if (this->serverDirectUrls.size() > 64) this->serverDirectUrls.clear();  // session bound
+    this->serverDirectUrls.emplace(key, url);
+    return url;
+}
+
 media::PlaybackSource JellyfinBackend::resolvePlayback(
     const media::Item& item, const media::Media& version, const media::PlaybackOptions& opts) {
     std::string tok = token();
@@ -797,6 +824,25 @@ media::PlaybackSource JellyfinBackend::resolvePlayback(
                 return {version.remotePath.empty() ? urls.path : version.remotePath, e.str(), false, "directplay"};
             }
             brls::Logger::info("jellyfin: no remote URL, keeping the built stream URL (the server will fetch it)");
+        }
+        // A source the server calls local still gets this treatment: Emby's own web
+        // client plays through the URL the server hands out
+        // (/videos/{id}/original.mp4?Static=true), and that one honours HTTP Range.
+        // The URL built below (/Videos/{id}/stream?static=true) is answered whole-file
+        // by some versions — and a stream that ignores Range forces the player to read
+        // the entire file before the first frame (a 227 MB episode: ~20 s over Wi-Fi,
+        // and the resume offset silently lost). One request per title, cached.
+        if (!version.sourceId.empty()) {
+            const auto started = std::chrono::steady_clock::now();
+            const std::string serverUrl = this->serverDirectUrl(item.ratingKey, version.sourceId, tok);
+            if (!serverUrl.empty()) {
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - started)
+                                    .count();
+                brls::Logger::info("jellyfin: direct play through the server's own url {} ({} ms)",
+                    urlPath(serverUrl), ms);
+                return {serverUrl, e.str(), false, "directplay"};
+            }
         }
         std::string url = withToken(base() + version.parts.front().key, tok);
         return {url, e.str(), false, "directplay"};

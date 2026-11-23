@@ -12,6 +12,8 @@
 #pragma once
 
 #include "api/backend.hpp"
+#include <map>
+#include <mutex>
 
 namespace jellyfin {
 
@@ -89,6 +91,17 @@ public:
 
 private:
     media::BackendType backendType;
+
+    /// Direct-play URL the SERVER handed out, keyed "<itemId>/<sourceId>". Emby's own
+    /// clients play through this URL (/videos/{id}/original.mp4?Static=true), which
+    /// honours HTTP Range; the hand-built /Videos/{id}/stream?static=true does not
+    /// always, and a stream that ignores Range makes the player read the whole file
+    /// before the first frame. Cached per title so a resume or a quality switch does
+    /// not pay the extra request again.
+    std::string serverDirectUrl(const std::string& itemId, const std::string& sourceId,
+        const std::string& tok) const;
+    mutable std::map<std::string, std::string> serverDirectUrls;
+    mutable std::mutex serverDirectUrlsMutex;
 };
 
 }  // namespace jellyfin
