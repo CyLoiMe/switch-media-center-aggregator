@@ -532,6 +532,9 @@ media::Backend& AppConfig::backend() {
                 this->activeBackend = new plex::PlexBackend();
                 break;
         }
+        // One line per backend instance: with it the log shows WHICH address the
+        // session is about to talk to, instead of leaving a spinner to guess.
+        brls::Logger::info("backend: {} at {}", type, this->server_url);
     }
     return *this->activeBackend;
 }
@@ -657,6 +660,7 @@ bool AppConfig::checkLogin() {
         brls::Logger::warning("AppConfig checkLogin: aucun endpoint joignable pour {}", it->name);
         return false;
     }
+    brls::Logger::info("checkLogin: server={} resolved={} (lan={})", it->id, url, lan);
     this->server_url = url;
     this->lan_mode = lan;
     this->server_token = it->access_token;
@@ -709,9 +713,14 @@ int AppConfig::getValueIndex(const Item item, int default_index) const {
 }
 
 bool AppConfig::addServer(const AppServer& s) {
-    if (s.urls.size() > 0) {
-        this->server_url = s.urls.front();
-    }
+    // The address being promoted belongs to THIS server — never to the ambient
+    // `server_url`. With an empty `s.urls` (a connection that only has a LAN
+    // address) the old code inserted the PREVIOUS connection's address into this
+    // server's candidate list, and the next checkLogin/reachableUrl probed it: the
+    // session then talked to the wrong host (a hang behind a proxy, and requests
+    // the other server's log shows).
+    const std::string front = s.urls.empty() ? std::string() : s.urls.front();
+    if (!front.empty()) this->server_url = front;
 
     for (auto& o : this->servers) {
         if (s.id == o.id) {
@@ -724,14 +733,16 @@ bool AppConfig::addServer(const AppServer& s) {
             // writes the address unconditionally.
             if (!s.local_url.empty()) o.local_url = s.local_url;
             this->server_token = o.access_token;
-            // remove old url
-            for (auto it = o.urls.begin(); it != o.urls.end(); ++it) {
-                if (it->compare(this->server_url) == 0) {
-                    it = o.urls.erase(it);
-                    break;
+            if (!front.empty()) {
+                // promote it, without duplicating it
+                for (auto it = o.urls.begin(); it != o.urls.end(); ++it) {
+                    if (it->compare(front) == 0) {
+                        it = o.urls.erase(it);
+                        break;
+                    }
                 }
+                o.urls.insert(o.urls.begin(), front);
             }
-            o.urls.insert(o.urls.begin(), this->server_url);
             this->save();
             return true;
         }

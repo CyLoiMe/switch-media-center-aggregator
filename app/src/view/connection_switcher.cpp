@@ -140,6 +140,11 @@ static void connectWithUser(const AppUser& u) {
                 if (!lan) s.urls = {base};
                 AppConfig::instance().addServer(s);
                 AppConfig::instance().addUser(u, base, lan);
+                // If these ever differ the next session talks to another server:
+                // the log says so instead of leaving a spinner to guess.
+                if (AppConfig::instance().getUrl() != base)
+                    brls::Logger::warning("switch: active url {} differs from resolved {}",
+                        AppConfig::instance().getUrl(), base);
                 // The switcher is reachable from the offline shell too. Connecting
                 // to a reachable server ends offline mode, otherwise the rebuilt
                 // MainActivity takes loadLibraries()' offline branch and keeps

@@ -42,6 +42,15 @@
 
 ### Fixed
 
+- **Switching to a connection that only has a LAN address no longer inherits the
+  previous connection's URL.** `addServer()` promoted the *ambient* `server_url`
+  into that server's candidate list instead of the address it was handed; with an
+  empty list, the previous server's address was written into the new one, and the
+  next `checkLogin()` probed it — the session then talked to the wrong host (a
+  spinner behind a proxy, with the other server's log showing the request). It now
+  uses only the address of the server being added. A config polluted by the old
+  behaviour keeps the stray address until that connection is edited (or re-added),
+  which the new `switch:` / `checkLogin:` / `backend:` log lines make visible.
 - **A refused direct play is retried once through PlaybackInfo.** Some servers never
   flag a `.strm` source as remote, so the player went straight to
   `/Videos/{id}/stream` and gave up when the server refused it. The error path now
