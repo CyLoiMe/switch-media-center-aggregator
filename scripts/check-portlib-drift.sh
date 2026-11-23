@@ -69,6 +69,25 @@ latest_from_tags() {  # $1 = tags api url, $2 = regex the tag must match
         sed -E 's/.*"([^"]*)"$/\1/' | grep -oE "$2" || true
 }
 
+ver_level() {  # $1 = installed, $2 = newer one -> none|patch|minor|major
+    local i x y
+    IFS='.' read -r -a a <<<"$1"
+    IFS='.' read -r -a b <<<"$2"
+    for i in 0 1 2; do
+        x="${a[$i]:-0}"
+        y="${b[$i]:-0}"
+        if [ "$x" != "$y" ]; then
+            case $i in
+                0) echo major ;;
+                1) echo minor ;;
+                *) echo patch ;;
+            esac
+            return
+        fi
+    done
+    echo patch  # differs only beyond the components we compare
+}
+
 ver_cmp() {  # -1 = $1 older, 0 = equal, 1 = $1 newer
     if [ "$1" = "$2" ]; then
         echo 0
@@ -92,19 +111,23 @@ report_row() {  # $1 name, $2 installed, $3 GMCA ci-deps, $4 GMCA dev, $5 upstre
             0) note="current" ;;
             1) note="installed is ahead of upstream" ;;
             *)
-                note="**behind** (upstream $up)"
-                drift=true
+                level=$(ver_level "$have" "$up")
+                note="**behind** (upstream $up, $level)"
+                # A patch-level gap is not worth an open issue: it is a rebuild
+                # away and the frozen binaries are a decision, not a regression.
+                [ "$level" != patch ] && drift=true
                 ;;
         esac
     fi
-    # somebody already built something newer — either their release or their tree
+    # somebody already built something newer — either their release or their tree.
+    # Same threshold as above: patch-level moves are noted, not tracked.
     if [ -n "$deps" ] && [ "$(ver_cmp "$deps" "$have")" = "1" ]; then
         note="$note; a newer GMCA build exists ($deps)"
-        drift=true
+        [ "$(ver_level "$have" "$deps")" != patch ] && drift=true
     fi
     if [ -n "$gmc" ] && [ "$(ver_cmp "$gmc" "$have")" = "1" ]; then
         note="$note; GMCA tree is newer ($gmc)"
-        drift=true
+        [ "$(ver_level "$have" "$gmc")" != patch ] && drift=true
     fi
     rows+=("| $1 | $have | ${deps:-?} | ${gmc:-?} | ${up:-?} | $note |")
 }
@@ -166,7 +189,9 @@ report_row "libmpv (deko3d)" "$have" "$deps" "$gmc" "$up"
     echo "\`GMCA dev\` is the fork \`scripts/switch\` was copied from: newer there means"
     echo "someone already did the patch rebase."
     echo "\`upstream latest\` is the library itself — where security fixes land; being"
-    echo "behind it is the cost of frozen binaries, not a bug."
+    echo "behind it is the cost of frozen binaries, not a bug. **Only a minor or major"
+    echo "gap keeps the issue open**: a patch-level difference is a rebuild away and"
+    echo "is listed here without being tracked."
     echo
     echo "When an upgrade is actually needed the order is mbedtls → dav1d → ffmpeg"
     echo "(+ libmpv), cheapest patch first: see \`scripts/switch/README.md\`."
