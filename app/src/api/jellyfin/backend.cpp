@@ -872,7 +872,10 @@ void JellyfinBackend::refreshUserPolicy(std::function<void()> done) {
             brls::Logger::warning("jellyfin policy refresh: {}", ex.what());
         }
         if (known) {
-            AppConfig::instance().setUserCanDownload(uid, canDownload);
+            // the config is read on the UI thread: write it there, not from here
+            brls::sync([uid, canDownload]() {
+                AppConfig::instance().setUserCanDownload(uid, canDownload);
+            });
             brls::Logger::info("jellyfin: download permission for {} is {}", uid, canDownload);
         }
         if (done) brls::sync(done);
