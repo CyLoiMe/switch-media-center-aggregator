@@ -32,6 +32,11 @@ private:
     bool restoreFocus = false;
 
     LoadingSpinner* spinner = nullptr;  // centered overlay while hubs load
+    /// The "Continue watching" row, kept so a finished playback can refetch just that
+    /// row: the tab is cached and never re-requests when it is re-attached, which is
+    /// why a film just watched was missing from it (utils/playback_events.hpp).
+    RecylingVideo* resumeRow = nullptr;
+    MPVCustomEvent::Subscription playbackEndedSub{};
     // offline empty state: added to the tab root (definite height) with the
     // scroll hidden, so it centers — a grow child of the scroll content would
     // be measured with an indefinite height and stay top-aligned

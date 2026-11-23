@@ -15,6 +15,7 @@
 #include "utils/misc.hpp"
 #include "utils/wan_filter.hpp"
 #include "utils/wan_guard.hpp"
+#include "utils/playback_events.hpp"
 #include "view/mpv_core.hpp"
 #include "view/player_setting.hpp"
 #include "view/video_view.hpp"
@@ -183,6 +184,10 @@ PlayerView::~PlayerView() {
     if (!mpv.isStopped()) this->reportStop();
     // Free the server-side transcode session on exit (else it lingers orphaned).
     this->stopTranscode();
+    // The playback is over: whoever lists "continue watching" must refetch. The home
+    // Resume row is cached with its tab and would otherwise still show the answer
+    // from before this film was started.
+    playbackEndedEvent().fire("PlaybackEnded", nullptr);
     brls::Application::getExitEvent()->unsubscribe(this->exitSubscribeID);
     brls::Logger::debug("trying delete PlayerView...");
 }
@@ -409,7 +414,7 @@ void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t f
                     wanguard::isTunnelUrl(AppConfig::instance().getUrl(), src.url));
             }
 
-            brls::sync([ASYNC_TOKEN, src, blocked]() {
+            brls::sync([ASYNC_TOKEN, src, blocked, startedItem = item.ratingKey, startMs = opts.seekMs]() {
                 ASYNC_RELEASE
                 if (blocked) {
                     Dialog::show("main/player/wan_block"_i18n, []() { VideoView::close(); });
@@ -423,6 +428,10 @@ void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t f
                     return;
                 }
                 this->playMethod = src.playMethod;
+                // Register the session with the server (Jellyfin/Emby
+                // /Sessions/Playing): without it the device never appears as "now
+                // playing", and the progress reports have no session behind them.
+                AppConfig::instance().backend().reportStart(startedItem, startMs, this->sessionId);
                 // Remember the backend transcode session so we can tear it down
                 // server-side on reload/exit; left running, the server keeps
                 // encoding a stream nobody is watching. Set by the backend

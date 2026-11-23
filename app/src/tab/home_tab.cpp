@@ -7,6 +7,7 @@
 #include "utils/network_state.hpp"
 #include "utils/offline_library.hpp"
 #include "utils/offline_ui.hpp"
+#include "utils/playback_events.hpp"
 
 using namespace brls::literals;  // for _i18n
 
@@ -17,9 +18,20 @@ HomeTab::HomeTab() {
     // built into boxHome only once the response arrives).
     this->spinner = new LoadingSpinner();
     this->addView(this->spinner);
+
+    // A playback that ends while this tab is cached must refresh the Resume row now:
+    // re-attaching a cached tab does not re-request anything, so the film just
+    // watched would stay missing until a manual refresh or restart.
+    this->playbackEndedSub = playbackEndedEvent().subscribe([this](const std::string& event, void*) {
+        if (event != "PlaybackEnded") return;
+        if (this->resumeRow) this->doResume(this->resumeRow);
+    });
 }
 
-HomeTab::~HomeTab() { brls::Logger::debug("View HomeTab: delete"); }
+HomeTab::~HomeTab() {
+    playbackEndedEvent().unsubscribe(this->playbackEndedSub);
+    brls::Logger::debug("View HomeTab: delete");
+}
 
 brls::View* HomeTab::create() { return new HomeTab(); }
 
@@ -27,6 +39,8 @@ brls::View* HomeTab::create() { return new HomeTab(); }
 /// watching" then the hubs from /hubs, with their localized titles
 /// (X-Plex-Language) — PLEX_MIGRATION.md §2.5.
 void HomeTab::doRequest() {
+    // anything the rows pointed at is about to be destroyed by clearViews()
+    this->resumeRow = nullptr;
     // drop any previous offline empty overlay -> back to the scrollable list
     if (this->offlineEmpty) {
         this->removeView(this->offlineEmpty);
@@ -79,6 +93,7 @@ void HomeTab::doRequest() {
     resume->setVisibility(brls::Visibility::GONE);
     this->boxHome->addView(resume);
 
+    this->resumeRow = resume;
     this->doResume(resume);
     this->doHubs();
 }

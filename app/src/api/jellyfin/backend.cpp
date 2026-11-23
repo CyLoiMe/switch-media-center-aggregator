@@ -845,6 +845,29 @@ std::string JellyfinBackend::subtitleSidecarUrl(const std::string& streamKey) co
     return withToken(base() + streamKey, token());
 }
 
+void JellyfinBackend::reportStart(const std::string& id, int64_t posMs, const std::string& sessionId) {
+    // /Sessions/Playing: the server only tracks a playback (and its "now playing"
+    // entry) from this call. Progress reports alone still store the position on
+    // Stopped, which is why it worked without it — but the session was invisible.
+    nlohmann::json body = {
+        {"ItemId", id},
+        {"PositionTicks", posMs * TICKS_PER_MS},
+        {"PlaySessionId", sessionId},
+        {"CanSeek", true},
+        {"IsPaused", false},
+    };
+    const std::string url = base() + std::string(apiSessionsPlaying);
+    const std::string tok = token();
+    const std::string payload = body.dump();
+    brls::async([url, tok, payload]() {
+        try {
+            postSync(url, tok, payload);
+        } catch (const std::exception& ex) {
+            brls::Logger::warning("jellyfin start: {}", ex.what());
+        }
+    });
+}
+
 void JellyfinBackend::reportProgress(
     const std::string& id, media::PlayState state, int64_t posMs, int64_t durMs, const std::string& sessionId) {
     nlohmann::json body = {

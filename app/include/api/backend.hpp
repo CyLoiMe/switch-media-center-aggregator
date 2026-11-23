@@ -209,6 +209,12 @@ public:
     virtual std::string subtitleMenuHint() const { return ""; }
     virtual void reportProgress(
         const std::string& id, PlayState state, int64_t posMs, int64_t durMs, const std::string& sessionId) {}
+    /// Optional: announced once per (re)start, before the first bytes reach mpv.
+    /// Jellyfin/Emby use it for /Sessions/Playing, which is what puts this device in
+    /// the server's "now playing" list and gives the progress reports a session to
+    /// belong to. Plex's timeline (reportProgress with state=Playing) covers the
+    /// equivalent, so the default does nothing.
+    virtual void reportStart(const std::string& id, int64_t posMs, const std::string& sessionId) {}
 
     // ---- url helpers ---------------------------------------------------------
     /// Server-relative image path -> tokenized (and optionally resized) URL.

@@ -71,6 +71,7 @@ public:
     std::string subtitleSidecarUrl(const std::string& streamKey) const override;
     void reportProgress(const std::string& id, media::PlayState state, int64_t posMs, int64_t durMs,
         const std::string& sessionId) override;
+    void reportStart(const std::string& id, int64_t posMs, const std::string& sessionId) override;
 
     std::string imageUrl(const std::string& path, int width = 0, int height = 0) const override;
     std::string downloadUrl(const std::string& partKey) const override;

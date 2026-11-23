@@ -30,6 +30,16 @@
 
 ### Fixed
 
+- Home's "Continue watching" row now refetches when a playback ends. Tabs are
+  cached (`AutoSidebarItem::getAttachedView()` hands back the same view on every
+  re-attach) and nothing re-requested on re-attach, so the row kept the answer it had
+  when the tab was built: a film just watched was missing from it until a manual
+  refresh or a restart. The player now fires `playbackEndedEvent()` when it closes and
+  the row refetches itself — even while the home tab is off screen.
+- The player announces the session before the first bytes
+  (`POST /Sessions/Playing` on Jellyfin/Emby). Progress reports already stored the
+  position on stop, which is why playback looked fine, but the server never listed
+  this device under "now playing" and its progress had no session behind it.
 - A cloud source whose gateway sits on the LAN now plays directly. The rule that
   drops a private `DirectStreamUrl` ("unreachable from a console elsewhere") also
   dropped it when the server itself was on that LAN — the normal setup for a 115/123
