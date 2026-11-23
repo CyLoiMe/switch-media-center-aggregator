@@ -40,6 +40,11 @@ void MainActivity::onContentAvailable() {
     this->tabFrame->applyCapabilities();
     this->tabFrame->loadLibraries();
 
+    // The account policy decides whether the download button exists, and an admin
+    // can change it while this profile stays logged in. One request, async, no-op on
+    // backends without such a policy.
+    AppConfig::instance().backend().refreshUserPolicy(nullptr);
+
     // The footer is now button hints only, floating bottom-right over the
     // content (no band, no separator). Inset its gradient scrim by the sidebar
     // width so the fade covers the content area only, never the sidebar.

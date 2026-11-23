@@ -486,6 +486,14 @@ void AppConfig::prunePlaybackQuality() {
     }
 }
 
+void AppConfig::setUserCanDownload(const std::string& userId, bool canDownload) {
+    auto it = std::find_if(this->users.begin(), this->users.end(),
+        [&userId](const AppUser& u) { return u.id == userId; });
+    if (it == this->users.end() || it->can_download == canDownload) return;
+    it->can_download = canDownload;
+    this->save();
+}
+
 bool AppConfig::canDownload() const {
     // Unknown (no active profile, or a backend without the policy) means allowed:
     // hiding a working button is worse than offering one the server may refuse.

@@ -42,6 +42,10 @@ public:
     View* getNextFocus(brls::FocusDirection direction, View* currentView) override { return this; }
 
     void setTitie(const std::string& title);
+    /// Short suffix on the title line ("Direct" / "Transcode 8 Mbps"): which path
+    /// this playback took. Empty hides it. Kept separate from the title so a
+    /// quality switch only has to update the badge.
+    void setStreamBadge(const std::string& badge);
 
     void setList(const std::vector<std::string>& values, int index = -1);
 
@@ -88,6 +92,12 @@ public:
     static bool close(bool quit = false);
 
 private:
+    /// OSD title line: the title plus an optional "· Direct / Transcode 8 Mbps"
+    /// suffix. Kept apart so a quality switch only rewrites the suffix.
+    std::string title;
+    std::string streamBadge;
+    void updateTitleLine();
+
     /// OSD
     BRLS_BIND(brls::Label, titleLabel, "video/osd/title");
     BRLS_BIND(brls::Box, btnForward, "video/osd/forward");

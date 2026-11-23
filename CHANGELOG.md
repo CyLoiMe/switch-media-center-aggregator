@@ -42,6 +42,12 @@
 
 ### Fixed
 
+- **A refused direct play is retried once through PlaybackInfo.** Some servers never
+  flag a `.strm` source as remote, so the player went straight to
+  `/Videos/{id}/stream` and gave up when the server refused it. The error path now
+  asks the server for the URL it hands out (`PlaybackOptions::forcePlaybackInfo`),
+  one attempt per load and only for Jellyfin/Emby — the first try still costs no
+  extra request.
 - **A cloud download now fetches the file from its own URL.** When PlaybackInfo
   handed out no `DirectStreamUrl` the download fell back to `/Videos/{id}/stream`,
   i.e. the server pulling the cloud file through itself — the same 20 s
@@ -87,6 +93,12 @@
 
 ### Added
 
+- The player's OSD title now ends with the path it took — `· Direct` or
+  `· Transcode 8 Mbps` — so "why is this one slower?" no longer needs a log. The
+  badge follows a quality switch, which reloads through the same code.
+- The account policy is re-read at launch (`/Users/{id}`), so revoking a user's
+  download permission now hides the button without a re-login. A failed refresh
+  keeps the stored value: a network blip must not hide a working button.
 - A series page now says what Play will do and which episode it means: the button
   reads *Resume* when it continues a half-watched episode (and *Play again* after the
   show is finished), with `S8E9 · title` under it. The data was already fetched for

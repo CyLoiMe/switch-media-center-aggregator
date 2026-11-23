@@ -287,6 +287,9 @@ public:
     /// Whether the ACTIVE profile may download (Jellyfin/Emby account policy).
     /// True for backends that do not report it, so nothing is hidden by default.
     bool canDownload() const;
+    /// Records the policy just read from the server for one profile. No-op when it
+    /// did not change (the file is not rewritten for nothing).
+    void setUserCanDownload(const std::string& userId, bool canDownload);
     /// Quality override for one title, in bps (0 = none, follow PLAYBACK_MODE).
     /// `key` is "<server>/<titleId>", `title` the name it was chosen for — an entry
     /// whose title no longer matches is dropped (a recycled id must not inherit it).

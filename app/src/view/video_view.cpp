@@ -377,7 +377,21 @@ VideoView::~VideoView() {
     if (!this->loopPlaylist.empty()) mpv.command("set", "loop-playlist", this->loopPlaylist.c_str());
 }
 
-void VideoView::setTitie(const std::string& title) { this->titleLabel->setText(title); }
+void VideoView::setTitie(const std::string& title) {
+    this->title = title;
+    this->updateTitleLine();
+}
+
+void VideoView::setStreamBadge(const std::string& badge) {
+    this->streamBadge = badge;
+    this->updateTitleLine();
+}
+
+void VideoView::updateTitleLine() {
+    this->titleLabel->setText(this->streamBadge.empty()
+            ? this->title
+            : fmt::format("{}  ·  {}", this->title, this->streamBadge));
+}
 
 void VideoView::setList(const std::vector<std::string>& values, int index) {
     // 选集

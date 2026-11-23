@@ -34,7 +34,8 @@ private:
     /// (a hardware decoder can reject the transcoded stream).
     /// forceBitrate (bps, 0 = user setting) caps the stream for the
     /// transcode fallback after a direct-play error.
-    void startPlayback(const int64_t seekMs, bool forceDirect = false, int64_t forceBitrate = 0);
+    void startPlayback(const int64_t seekMs, bool forceDirect = false, int64_t forceBitrate = 0,
+        bool forcePlaybackInfo = false);
     /// Tears the current Plex transcode session down server-side (no-op for
     /// direct play or non-Plex backends). Fire-and-forget; safe to call after
     /// `this` is gone.
@@ -47,6 +48,9 @@ private:
     /// server may refuse the raw part while a transcode session opens fine.
     /// Returns true when a fallback was started (so the error dialog is suppressed).
     bool tryTranscodeFallback();
+    /// last step before the error dialog: ask the server (PlaybackInfo) after a
+    /// direct play failed, for servers that do not flag their remote sources
+    bool tryPlaybackInfoFallback();
     /// On a Plex direct-play error, retry once on the bare part URL, silently:
     /// a server may refuse ?download=1 to a user without download rights.
     bool tryPlainUrlFallback();
@@ -91,6 +95,10 @@ private:
     bool directPlayFallback = false;
     /// same guard for tryTranscodeFallback (direct play -> transcode)
     bool transcodeFallback = false;
+    /// guards tryPlaybackInfoFallback: a direct play that failed may be one the
+    /// server only serves through PlaybackInfo (it never flags those as remote).
+    /// One rescue attempt per load; reset by playMedia.
+    bool playbackInfoFallback = false;
     /// seekMs of the last startPlayback call: a load that fails to open leaves
     /// mpv playback_time at 0, so the fallbacks resume from this instead.
     int64_t lastSeekMs = 0;

@@ -67,6 +67,11 @@ struct PlaybackOptions {
     bool forceDirectPlay = false;
     bool plainPartUrl = false;     // direct play on the bare part URL instead of the download one (Plex)
     bool burnSubtitles = false;
+    /// Ask PlaybackInfo even when the source is not flagged remote: some servers
+    /// never set `IsRemote` but still hand out the only usable URL there. Only the
+    /// player's error path sets this (one rescue attempt per load), never the
+    /// first try — it costs a request per playback.
+    bool forcePlaybackInfo = false;
     std::string videoCodec = "h264";  // transcode target codec
     std::string sessionId;            // stable per-playback session id (X-Plex-Session-Identifier / PlaySessionId)
 };
@@ -215,6 +220,12 @@ public:
     /// belong to. Plex's timeline (reportProgress with state=Playing) covers the
     /// equivalent, so the default does nothing.
     virtual void reportStart(const std::string& id, int64_t posMs, const std::string& sessionId) {}
+    /// Optional: re-read the account policy (Jellyfin/Emby: may this user
+    /// download?). Called once per launch and on profile switch, never blocking;
+    /// a failure keeps the stored value. Default does nothing.
+    virtual void refreshUserPolicy(std::function<void()> done) {
+        if (done) done();
+    }
 
     // ---- url helpers ---------------------------------------------------------
     /// Server-relative image path -> tokenized (and optionally resized) URL.

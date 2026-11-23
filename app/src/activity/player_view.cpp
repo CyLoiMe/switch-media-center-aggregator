@@ -58,8 +58,8 @@ PlayerView::PlayerView(const plex::Item& item, const int64_t seekMs, int version
     // dialog (a hardware decoder can reject a transcoded stream, a server
     // can refuse the raw part)
     view->registerError([this](...) {
-        return this->tryDirectPlayFallback() || this->tryPlainUrlFallback() || this->explainRefusal() ||
-               this->tryTranscodeFallback();
+        return this->tryDirectPlayFallback() || this->tryPlainUrlFallback() ||
+               this->tryPlaybackInfoFallback() || this->explainRefusal() || this->tryTranscodeFallback();
     });
 
     // Repeat::One: reload from 0 rather than mpv loop-file, which loops back to
@@ -254,6 +254,7 @@ void PlayerView::playMedia(const int64_t seekMs) {
     // deliberate (re)start: allow the playback fallbacks to trigger again
     this->directPlayFallback = false;
     this->transcodeFallback = false;
+    this->playbackInfoFallback = false;
 
     // Fast path: the caller already resolved the exact source (Stremio source
     // picker and movie version selector pass the fully-resolved item + chosen
@@ -313,7 +314,8 @@ void PlayerView::playMedia(const int64_t seekMs) {
         });
 }
 
-void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t forceBitrate) {
+void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t forceBitrate,
+    bool forcePlaybackInfo) {
     // We are about to (re)load: mpv will drop any sub-add'ed tracks. Clear the
     // loaded flag so a subtitle fetch landing mid-load waits for MPV_LOADED to
     // re-add. (External subtitles are resolved AFTER the playback task is queued
@@ -368,6 +370,7 @@ void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t f
     // forceDirect: the transcode->direct-play fallback re-resolves with direct
     // play forced (resolvePlayback returns the direct source when set).
     opts.forceDirectPlay = directMode || forceDirect;
+    opts.forcePlaybackInfo = forcePlaybackInfo;
     opts.maxHeight = maxHeight;
     opts.plainPartUrl = this->plainPartUrl;
     opts.audioStreamId = PlayerSetting::selectedAudio;
@@ -414,7 +417,8 @@ void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t f
                     wanguard::isTunnelUrl(AppConfig::instance().getUrl(), src.url));
             }
 
-            brls::sync([ASYNC_TOKEN, src, blocked, startedItem = item.ratingKey, startMs = opts.seekMs]() {
+            brls::sync([ASYNC_TOKEN, src, blocked, startedItem = item.ratingKey, startMs = opts.seekMs,
+                           capBps = opts.bitrateCap]() {
                 ASYNC_RELEASE
                 if (blocked) {
                     Dialog::show("main/player/wan_block"_i18n, []() { VideoView::close(); });
@@ -428,6 +432,13 @@ void PlayerView::startPlayback(const int64_t seekMs, bool forceDirect, int64_t f
                     return;
                 }
                 this->playMethod = src.playMethod;
+                // Tell the OSD which path this playback took: the one question a log
+                // used to answer ("why is this one slower?"). Quality switches reload
+                // through here too, so the badge follows them.
+                this->view->setStreamBadge(
+                    !src.isTranscode ? "main/player/direct"_i18n
+                    : capBps > 0     ? fmt::format(fmt::runtime("main/player/transcode_mbps"_i18n), capBps / 1000000)
+                                     : "main/player/transcode"_i18n);
                 // Register the session with the server (Jellyfin/Emby
                 // /Sessions/Playing): without it the device never appears as "now
                 // playing", and the progress reports have no session behind them.
@@ -555,6 +566,22 @@ bool PlayerView::explainRefusal() {
     dialog->addButton("hints/back"_i18n, []() { VideoView::close(true); });
     dialog->open();
     return true;  // handled: no generic error dialog
+}
+
+bool PlayerView::tryPlaybackInfoFallback() {
+    // A direct play that failed may be one this server only serves through the URL
+    // it hands out in PlaybackInfo, without ever flagging the source as remote.
+    // Only Jellyfin/Emby (the others do not have that URL), only once per load, and
+    // only when we did not already ask (a remote source did).
+    if (this->playbackInfoFallback || this->stream.remote || this->playMethod == "transcode") return false;
+    const auto type = AppConfig::instance().backend().type();
+    if (type != media::BackendType::Jellyfin && type != media::BackendType::Emby) return false;
+    this->playbackInfoFallback = true;
+    brls::Logger::info("playback {}: direct play failed, retrying with PlaybackInfo", this->itemId);
+    // If PlaybackInfo has nothing new, the same URL is tried once more and fails
+    // again — the flag then lets the chain continue to the transcode rescue.
+    this->startPlayback(this->lastSeekMs, true, 0, true);
+    return true;
 }
 
 bool PlayerView::tryTranscodeFallback() {

@@ -765,7 +765,9 @@ media::PlaybackSource JellyfinBackend::resolvePlayback(
         // through the URL IT hands out in PlaybackInfo. Cloud-drive front-ends
         // (TgtoDrive and the like) rewrite DirectStreamUrl to the CDN's signed
         // link and reject the /Videos/{id}/stream URL built below with a 403.
-        if (version.remote) {
+        // `forcePlaybackInfo` comes from the player's error path: a direct play just
+        // failed, and this server may be one that never flags its remote sources.
+        if (version.remote || opts.forcePlaybackInfo) {
             jellyfin::SourceUrls urls;  // needed by both branches below
             if (!version.sourceId.empty()) {
                 urls = playbackInfoUrl(item.ratingKey, version.sourceId, tok);
@@ -849,6 +851,32 @@ media::PlaybackSource JellyfinBackend::resolvePlayback(
 std::string JellyfinBackend::subtitleSidecarUrl(const std::string& streamKey) const {
     if (streamKey.empty()) return "";
     return withToken(base() + streamKey, token());
+}
+
+void JellyfinBackend::refreshUserPolicy(std::function<void()> done) {
+    // /Users/{id} carries the account policy: EnableContentDownloading is what gates
+    // the download button, and an admin can change it while this profile stays
+    // logged in. One request per launch (see MainActivity), off the UI thread; on any
+    // failure the stored value stays as it was — a network blip must not hide a
+    // button that works.
+    const std::string uid = userId(), tok = token(), b = base();
+    brls::async([uid, tok, b, done]() {
+        bool canDownload = true, known = false;
+        try {
+            const auto j = getSync(b + fmt::format("/Users/{}", uid), tok);
+            if (j.contains("Policy") && j["Policy"].is_object()) {
+                canDownload = j["Policy"].value("EnableContentDownloading", true);
+                known = true;
+            }
+        } catch (const std::exception& ex) {
+            brls::Logger::warning("jellyfin policy refresh: {}", ex.what());
+        }
+        if (known) {
+            AppConfig::instance().setUserCanDownload(uid, canDownload);
+            brls::Logger::info("jellyfin: download permission for {} is {}", uid, canDownload);
+        }
+        if (done) brls::sync(done);
+    });
 }
 
 void JellyfinBackend::reportStart(const std::string& id, int64_t posMs, const std::string& sessionId) {
