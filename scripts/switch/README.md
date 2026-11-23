@@ -27,5 +27,9 @@ are both immutable, so CI is reproducible. The gap only matters when a portlib n
 security fix or a new feature, when the devkitPro base image changes ABI, or when the
 release assets disappear.
 
+For the current gap, run `bash scripts/check-portlib-drift.sh` (read-only: it compares
+these versions with GMCA's `dev` branch and with each library's own latest release).
+The `portlib-drift` workflow runs it weekly and keeps one issue updated.
+
 Before touching anything here, read the "portlibs" note in `docs/backlog.md`
 (working notes, not in this repository).

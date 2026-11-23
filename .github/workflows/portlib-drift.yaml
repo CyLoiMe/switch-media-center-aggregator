@@ -1,0 +1,50 @@
+name: portlib-drift
+
+# Weekly, read-only. Compares the Switch portlibs this build installs (pinned by
+# exact filename in switch.yaml) against GMCA's scripts/switch — the fork those
+# binaries were built from, i.e. the only place where someone else has already
+# done the version-locked patch rebase — and against the libraries' own latest
+# releases, where security fixes land.
+#
+# It builds nothing and bumps nothing. Its only output is one issue that shows how
+# far behind the frozen binaries are, so a security release or a new libmpv
+# requirement does not arrive unnoticed.
+on:
+  schedule:
+    - cron: '0 1 * * 1'   # Mondays 01:00 UTC
+  workflow_dispatch:
+  # editing the checker itself runs it once, so a change is proven then and there
+  push:
+    paths:
+      - '.github/workflows/portlib-drift.yaml'
+      - 'scripts/check-portlib-drift.sh'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Compare pinned versions with GMCA and upstream
+      id: check
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: bash scripts/check-portlib-drift.sh
+
+    - name: Open or update the drift issue
+      if: steps.check.outputs.drift == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        body=$(cat portlib-drift.md)
+        num=$(gh issue list --state open --search 'Portlib drift in:title' --json number --jq '.[0].number // ""')
+        if [ -n "$num" ]; then
+          echo "updating issue #$num"
+          gh issue edit "$num" --body "$body"
+        else
+          gh issue create --title "Portlib drift: newer releases are available" --body "$body"
+        fi
