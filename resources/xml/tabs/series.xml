@@ -230,6 +230,16 @@
                             marginLeft="12" />
                     </brls:Box>
 
+                    <!-- What the Play button points at ("S8E9 · title"), filled by
+                         doNextup(); hidden while it is unknown, offline, or when the
+                         show has nothing left to resume. -->
+                    <brls:Label
+                        id="series/upnext"
+                        fontSize="13"
+                        textColor="@theme/font/grey"
+                        visibility="gone"
+                        marginTop="8" />
+
                     <TextBox
                         id="series/label/overview"
                         fontSize="15"

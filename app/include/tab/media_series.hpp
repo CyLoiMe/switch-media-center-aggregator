@@ -45,6 +45,8 @@ private:
     BRLS_BIND(brls::Label, labelAudience, "series/label/audience");
     BRLS_BIND(TextBox, labelOverview, "series/label/overview");
     BRLS_BIND(brls::Label, labelGenres, "series/label/genres");
+    /// "S8E9 · episode" under the buttons: what Play/Resume will actually start
+    BRLS_BIND(brls::Label, labelUpNext, "series/upnext");
     BRLS_BIND(IconButton, btnPlay, "series/play");
     BRLS_BIND(IconButton, btnDownload, "series/download");
     BRLS_BIND(IconButton, btnWatchlist, "series/watchlist");

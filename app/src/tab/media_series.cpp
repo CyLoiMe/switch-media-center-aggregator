@@ -845,6 +845,7 @@ void MediaSeries::doNextup() {
     if (NetworkState::isOffline()) {
         this->onDeck = media::Item();
         this->btnPlay->setVisibility(brls::Visibility::GONE);
+        this->labelUpNext->setVisibility(brls::Visibility::GONE);
         return;
     }
 
@@ -859,10 +860,23 @@ void MediaSeries::doNextup() {
             if (item.ratingKey.empty()) {
                 this->onDeck = media::Item();
                 this->btnPlay->setVisibility(brls::Visibility::GONE);
+                this->labelUpNext->setVisibility(brls::Visibility::GONE);
                 return;
             }
             this->onDeck = item;
-            this->btnPlay->setText(fromStart ? "main/media/replay"_i18n : "main/media/play"_i18n);
+            // Say WHICH episode the button plays, and label the button by what it
+            // will do: resume a half-watched one, start the next, or replay from
+            // the first after the show is finished.
+            const bool resuming = !fromStart && item.viewOffset > 0;
+            if (item.title.empty()) {
+                this->labelUpNext->setVisibility(brls::Visibility::GONE);
+            } else {
+                this->labelUpNext->setText(fmt::format("S{}E{} · {}", item.parentIndex, item.index, item.title));
+                this->labelUpNext->setVisibility(brls::Visibility::VISIBLE);
+            }
+            this->btnPlay->setText(fromStart      ? "main/media/replay"_i18n
+                                   : resuming     ? "main/media/continue"_i18n
+                                                  : "main/media/play"_i18n);
             this->btnPlay->setVisibility(brls::Visibility::VISIBLE);
 
             auto& be = AppConfig::instance().backend();
@@ -889,9 +903,11 @@ void MediaSeries::doNextup() {
                         this->onDeck = full;  // resolved (carries sources)
                         this->nextPlayable = playable;
                         this->btnPlay->setMuted(!playable);
-                        this->btnPlay->setText(playable
-                                ? (fs ? "main/media/replay"_i18n : "main/media/play"_i18n)
-                                : "main/stremio/source/unavailable"_i18n);
+                        this->btnPlay->setText(
+                            playable ? (fs ? "main/media/replay"_i18n
+                                           : full.viewOffset > 0 ? "main/media/continue"_i18n
+                                                                 : "main/media/play"_i18n)
+                                     : "main/stremio/source/unavailable"_i18n);
                     },
                     nullptr);
             } else {

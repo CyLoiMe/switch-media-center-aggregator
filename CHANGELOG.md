@@ -42,6 +42,17 @@
 
 ### Fixed
 
+- **A cloud download now fetches the file from its own URL.** When PlaybackInfo
+  handed out no `DirectStreamUrl` the download fell back to `/Videos/{id}/stream`,
+  i.e. the server pulling the cloud file through itself — the same 20 s
+  `HttpClient` timeout that produced the playback 500. `sourceUrls()` now returns
+  the media source's own absolute `Path` next to `DirectStreamUrl`, and the download
+  uses it before any proxy attempt (no token appended: it is not the server).
+- **The download button respects the account.** Jellyfin/Emby report
+  `Policy.EnableContentDownloading` at login; it is stored per profile (default
+  true, so an older config never hides a working button) and gates the three places
+  that show the button. Courtesy rather than enforcement — our download reads the
+  playback stream, which the server's download policy does not cover.
 - Home's "Continue watching" row now refetches when a playback ends. Tabs are
   cached (`AutoSidebarItem::getAttachedView()` hands back the same view on every
   re-attach) and nothing re-requested on re-attach, so the row kept the answer it had
@@ -76,6 +87,10 @@
 
 ### Added
 
+- A series page now says what Play will do and which episode it means: the button
+  reads *Resume* when it continues a half-watched episode (and *Play again* after the
+  show is finished), with `S8E9 · title` under it. The data was already fetched for
+  that button (`getNextUp`); it simply was not shown.
 - Home-video libraries. Emby's "Photos & videos" library (`CollectionType:
   homevideos`) and Jellyfin's "Home videos" now get a sidebar tab, list their
   videos and play one on **A** like a clip — no detail page, because a home video
