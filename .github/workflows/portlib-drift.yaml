@@ -39,12 +39,19 @@ jobs:
       if: steps.check.outputs.drift == 'true'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
       run: |
         body=$(cat portlib-drift.md)
-        num=$(gh issue list --state open --search 'Portlib drift in:title' --json number --jq '.[0].number // ""')
+        num=$(gh issue list --state open --limit 100 --json number,title \
+                --jq '.[] | select(.title | startswith("Portlib drift")) | .number' | head -1)
         if [ -n "$num" ]; then
           echo "updating issue #$num"
-          gh issue edit "$num" --body "$body"
+          gh issue edit "$num" --body "$body" || fail=1
         else
-          gh issue create --title "Portlib drift: newer releases are available" --body "$body"
+          echo "creating the drift issue"
+          gh issue create --title "Portlib drift: newer releases are available" --body "$body" || fail=1
+        fi
+        if [ "${fail:-0}" = 1 ]; then
+          echo "::error title=Issues are not writable::The report above is in this job's summary. To have it as an issue, allow Actions to write: Settings -> Actions -> General -> Workflow permissions -> Read and write permissions, then re-run this job."
+          exit 1
         fi
