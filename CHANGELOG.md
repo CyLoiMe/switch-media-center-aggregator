@@ -4,6 +4,18 @@
 
 ### Changed
 
+- **Left no longer jumps to the sidebar from inside a tab.** The sidebar sits left of
+  everything, so a stick drifting left at any depth landed on a sidebar item — and
+  merely *focusing* one switches the tab (`AutoSidebarItem::setActive` fires the
+  switch callback), which destroyed the whole detail stack: series and season pages
+  gone, back to the library root, and pressing right did not bring them back. Left is
+  now a wall inside the content (symmetric to the existing "no down" guard); the
+  sidebar is reached with **B**, which walks up one page at a time and lands there at
+  the top.
+- **Holding B retraces the whole stack.** The back action now repeats (the platform's
+  250 ms trigger, then every 100 ms), so one hold from a season page ends with the
+  sidebar focused. Popped pages are the ones already in memory, so nothing is
+  refetched on the way.
 - **Settings → Playback is one mode instead of four knobs.** A single three-way
   choice — *Auto* (direct, transcode only above the limit), *Always direct*,
   *Always transcode* — replaces "force direct play" and "also limit direct play",

@@ -500,7 +500,7 @@ void AutoTabFrame::pushDetailView(brls::View* detail) {
 
     detail->setGrow(1.0f);
     detail->registerAction(
-        "hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return this->popDetailView(); }, false, false,
+        "hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return this->popDetailView(); }, false, true,
         brls::SOUND_BACK);
 
     this->addView(detail);  // calls willAppear
@@ -634,6 +634,18 @@ brls::View* AutoTabFrame::getNextFocus(brls::FocusDirection direction, brls::Vie
     // holds the tab bar is `sidebarHolder` (== sidebar in horizontal mode, ==
     // the scroll+footer column in vertical mode), so key off that.
     if (direction == brls::FocusDirection::DOWN && currentView != this->sidebarHolder) {
+        return nullptr;
+    }
+
+    // LEFT out of the content is a wall, symmetric to the DOWN guard above. The
+    // sidebar sits left of every tab, so a stick drifting left at ANY depth used to
+    // land on a sidebar item — and merely FOCUSING one switches the tab
+    // (AutoSidebarItem::setActive fires the switch callback), which destroys the
+    // whole detail stack: season and series pages gone, back to the library root.
+    // The sidebar is reached with B instead (the tab content's own B action focuses
+    // its item, which does not switch anything) — see the allowRepeating flags.
+    if (direction == brls::FocusDirection::LEFT && this->tabBarPosition == AutoTabBarPosition::LEFT &&
+        currentView != this->sidebarHolder) {
         return nullptr;
     }
 
@@ -1285,7 +1297,7 @@ brls::View* AutoSidebarItem::createAttachedView() {
                 brls::Application::giveFocus(this);
             return true;
         },
-        false, false, brls::SOUND_BACK);
+        false, true, brls::SOUND_BACK);
     return this->attachedView;
 }
 
