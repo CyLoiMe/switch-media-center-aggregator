@@ -154,7 +154,8 @@ report_row "libmpv (deko3d)" "$have" "$deps" "$gmc" "$up"
 {
     echo "## Portlib versions"
     echo
-    echo "Checked $(date -u +%Y-%m-%d). Read-only report: nothing is built or bumped."
+    echo "Snapshot $(date -u +%Y-%m-%d). Read-only: nothing is built or bumped, and the"
+    echo "issue is rewritten only when this table changes — the weekly run always checks."
     echo
     echo "| library | build installs | GMCA ci-deps | GMCA dev | upstream latest | verdict |"
     echo "|---|---|---|---|---|---|"

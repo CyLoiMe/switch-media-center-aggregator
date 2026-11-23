@@ -35,12 +35,13 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: bash scripts/check-portlib-drift.sh
 
-    - name: Open or update the drift issue
-      if: steps.check.outputs.drift == 'true'
+    - name: Keep one issue in sync with the report
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GH_REPO: ${{ github.repository }}
       run: |
+        set -euo pipefail
+
         # A repository can have Issues switched off (this one does): then there is
         # nowhere to write, and no permission setting changes that. Say so once and
         # keep the run green — the report is already in this job's summary.
@@ -48,17 +49,33 @@ jobs:
           echo "::warning title=Issues are disabled::The drift report is in this run's Summary. Enable Issues in the repository settings to have it tracked as an issue."
           exit 0
         fi
-        body=$(cat portlib-drift.md)
+
         num=$(gh issue list --state open --limit 100 --json number,title \
                 --jq '.[] | select(.title | startswith("Portlib drift")) | .number' | head -1)
-        if [ -n "$num" ]; then
-          echo "updating issue #$num"
-          gh issue edit "$num" --body "$body" || fail=1
-        else
-          echo "creating the drift issue"
-          gh issue create --title "Portlib drift: newer releases are available" --body "$body" || fail=1
+
+        # Nothing behind: one issue must not outlive the condition it reports.
+        if [ "${{ steps.check.outputs.drift }}" != "true" ]; then
+          if [ -n "$num" ]; then
+            gh issue close "$num" --comment "Every portlib is at or ahead of upstream again. This issue comes back by itself if that changes."
+            echo "closed #$num: nothing drifted"
+          else
+            echo "nothing drifted, no issue to close"
+          fi
+          exit 0
         fi
-        if [ "${fail:-0}" = 1 ]; then
-          echo "::error title=Issues are not writable::The report above is in this job's summary. To have it as an issue, allow Actions to write: Settings -> Actions -> General -> Workflow permissions -> Read and write permissions, then re-run this job."
-          exit 1
+
+        body=$(cat portlib-drift.md)
+        if [ -n "$num" ]; then
+          # Compare the TABLE only: the "Snapshot" line changes every run, and
+          # rewriting the body just to bump a date is exactly the noise to avoid.
+          if diff -q <(grep -v '^Snapshot ' <<<"$(gh issue view "$num" --json body --jq .body)") \
+                     <(grep -v '^Snapshot ' <<<"$body") >/dev/null; then
+            echo "table unchanged since #$num — leaving it alone"
+            exit 0
+          fi
+          echo "table changed — updating #$num"
+          gh issue edit "$num" --body "$body" || exit 1
+        else
+          echo "opening the drift issue"
+          gh issue create --title "Portlib drift: newer releases are available" --body "$body" || exit 1
         fi
