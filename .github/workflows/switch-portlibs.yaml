@@ -2,8 +2,13 @@ name: switch-portlibs
 
 # Rebuilds the Switch portlibs (mpv / ffmpeg / curl / …) from scripts/switch and
 # publishes them as the `switch-portlibs` prerelease of THIS repository, so the
-# build stops depending on another project's release. Run it by hand when a
-# portlib needs a bump, then point DEPS_URL in switch.yaml at the result.
+# build stops depending on another project's release.
+#
+# ⚠ CURRENTLY DOES NOT REPRODUCE WHAT THE BUILD INSTALLS. scripts/switch is an older
+# snapshot (ffmpeg 7.1.4 / mbedtls 3.6.5 / dav1d 1.5.3) while switch.yaml asks for
+# 7.1.5 / 3.6.7 / 1.5.4 by exact filename; running this produces names the build
+# cannot use, and bumping pkgver first needs the version-locked devkitPro patches
+# rebased. Read scripts/switch/README.md before running it.
 on:
   workflow_dispatch:
 
