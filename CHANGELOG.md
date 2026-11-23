@@ -42,6 +42,15 @@
 
 ### Fixed
 
+- **B in the player no longer crashes the app.** Exiting popped the activity with
+  `TransitionAnimation::NONE`, and a non-animated pop runs its deletion callback
+  INLINE (`Activity::hide` → `View::hide(cb, animated=false)` → `cb()` → `delete
+  last`). The `VideoView` that received the B press was therefore freed while
+  `Application::handleAction` was still using it — right after the listener returns
+  it plays `action->getSound()` and then walks `hintParent->getParent()`. A
+  use-after-free on every exit during playback; a FADE pop would have deferred it
+  by a frame, which is why only this path crashed. The pop is now posted to the
+  next main-loop turn.
 - **Direct play uses the URL the server hands out, for local sources too.** The
   hand-built `/Videos/{id}/stream?static=true` is answered whole-file by some Emby
   versions: the client asks for `Range: bytes=995952-` and gets

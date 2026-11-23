@@ -880,7 +880,22 @@ bool VideoView::toggleVolume(brls::View* view) {
 
 bool VideoView::close(bool quit) {
     if (brls::Application::getActivitiesStack().size() > 1) {
-        return brls::Application::popActivity(brls::TransitionAnimation::NONE);
+        // Never pop from inside an action listener. Application::handleAction
+        // keeps using the view that received the button (it plays the action's
+        // sound and then walks hintParent->getParent()) after the listener
+        // returns, and a NONE-transition pop deletes that very view synchronously:
+        // popActivity -> Activity::hide -> View::hide(cb, animated=false) calls its
+        // callback inline, and that callback is `delete last`. The result was a
+        // use-after-free on every B press during playback. Post it to the next
+        // main-loop turn instead, when the action dispatch has unwound.
+        static bool popping = false;
+        if (popping) return true;  // a second B before the tick must not queue another pop
+        popping = true;
+        brls::sync([]() {
+            popping = false;
+            brls::Application::popActivity(brls::TransitionAnimation::NONE);
+        });
+        return true;
     }
 
     if (quit) {
