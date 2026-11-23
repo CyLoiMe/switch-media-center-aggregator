@@ -343,6 +343,12 @@ public:
     /// servers can share one. `userId` + this id is what "same connection" means
     /// (a download stamps both, see utils/download.hpp).
     std::string activeServerId() const;
+    /// One block per launch listing every connection and every profile, addresses
+    /// included, no tokens. It answers "which connection is this and which
+    /// addresses does it know" from the log alone — config.json is on the SD card
+    /// and awkward to read, and a switch that lands on the wrong host is otherwise
+    /// invisible until someone wiresharks it.
+    void logConnections() const;
     const std::string& getUserName() const { return this->user->name; }
     /// Active profile (name, avatar...) — valid after init()/checkLogin().
     const AppUser& getUser() const { return *this->user; }

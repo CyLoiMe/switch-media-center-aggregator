@@ -7,6 +7,7 @@
 #include <borealis/core/cache_helper.hpp>
 #include <algorithm>
 #include <ctime>
+#include <numeric>
 #include <borealis/views/edit_text_dialog.hpp>
 #include "api/plex/auth.hpp"
 #include "api/backend.hpp"
@@ -338,6 +339,9 @@ bool AppConfig::init() {
 
     brls::Logger::info("init {} v{}-{} device {} from {}", AppVersion::getPlatform(), AppVersion::getVersion(),
         AppVersion::getCommit(), this->device, path);
+    // After the banner: the connection table is the first thing a misroute report
+    // needs, and it costs three lines per connection.
+    this->logConnections();
     return true;
 }
 
@@ -373,6 +377,51 @@ std::string AppConfig::activeServerType() const {
     for (auto& s : this->servers)
         if (!this->server_url.empty() && !s.urls.empty() && s.urls.front() == this->server_url) return s.type;
     return "plex";
+}
+
+void AppConfig::logConnections() const {
+    auto join = [](const std::vector<std::string>& urls) {
+        std::string out;
+        for (const auto& u : urls) {
+            if (!out.empty()) out += ',';
+            out += u;
+        }
+        return out.empty() ? std::string("-") : out;
+    };
+    brls::Logger::info("conns: {} server(s), {} profile(s), active user_id={}", this->servers.size(),
+        this->users.size(), this->user_id);
+    for (const auto& s : this->servers)
+        brls::Logger::info("  server {} \"{}\" [{}] wan={} lan={}", s.id, s.name, s.type, join(s.urls),
+            s.local_url.empty() ? std::string("-") : s.local_url);
+    for (const auto& u : this->users)
+        brls::Logger::info("  profile {} \"{}\" -> server {}", u.id, u.name, u.server_id);
+
+    // Cross-contamination check. Two connections sharing an address is not always
+    // wrong (a reverse proxy in front of both, once the resolver is in play), but a
+    // LAN address or a whole remote URL appearing on a server that never had it is
+    // the signature of a config written by an older addServer(): it promoted the
+    // PREVIOUS connection's URL into the new one. The probe then answers from the
+    // wrong host and the session talks to it — a spinner, with our requests in the
+    // other server's log. Say it at launch, when the table is right above.
+    for (size_t i = 0; i < this->servers.size(); i++) {
+        for (size_t j = i + 1; j < this->servers.size(); j++) {
+            const auto& a = this->servers[i];
+            const auto& b = this->servers[j];
+            auto holds = [](const AppServer& s, const std::string& url) {
+                return (!s.local_url.empty() && s.local_url == url) ||
+                       std::find(s.urls.begin(), s.urls.end(), url) != s.urls.end();
+            };
+            // a's addresses, once each (local_url is often also in urls)
+            std::vector<std::string> mine = a.urls;
+            if (!a.local_url.empty() && std::find(mine.begin(), mine.end(), a.local_url) == mine.end())
+                mine.push_back(a.local_url);
+            for (const auto& url : mine)
+                if (holds(b, url))
+                    brls::Logger::warning("conns: \"{}\" and \"{}\" both hold {} — one of them was given a "
+                                          "foreign address; re-save it with Y",
+                        a.name, b.name, url);
+        }
+    }
 }
 
 std::string AppConfig::activeServerId() const {
@@ -572,10 +621,16 @@ std::string AppConfig::reachableUrl(const AppServer& s, bool* lan) {
             const std::vector<std::string> candidates = dualurl::candidates(policy, s.local_url, s.urls);
             // LanFirst/LanOnly keep strict priority: the tunnel only wins once the
             // LAN probe has failed. Race is the opt-in "fastest answer wins".
+            brls::Logger::info("reachableUrl: server {} \"{}\" tries {} candidate(s): {}", s.id, s.name,
+                candidates.size(), std::accumulate(candidates.begin(), candidates.end(), std::string{},
+                                          [](std::string acc, const std::string& u) {
+                                              return acc.empty() ? u : acc + ", " + u;
+                                          }));
             std::string chosen = (policy == dualurl::Policy::Race)
                                      ? plex::raceFirst(candidates, probe)
                                      : plex::raceConnections(candidates, probe);
             if (lan) *lan = dualurl::isLan(chosen, s.local_url);
+            brls::Logger::info("reachableUrl: chose {}", chosen.empty() ? std::string("(none)") : chosen);
             return chosen;
         }
         case media::BackendType::Plex:
