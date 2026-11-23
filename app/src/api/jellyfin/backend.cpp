@@ -228,19 +228,21 @@ void deleteAction(const std::string& url) {
     });
 }
 
-/// POST /Items/{id}/PlaybackInfo and return the play URL the server hands out for
-/// `sourceId` (empty when it gives none we can use — see jellyfin::directStreamUrl).
-/// Blocking: resolvePlayback() already runs inside brls::async.
-std::string playbackInfoUrl(const std::string& itemId, const std::string& sourceId, const std::string& tok) {
+/// POST /Items/{id}/PlaybackInfo and return both URLs it offers for `sourceId`:
+/// the server's DirectStreamUrl and the media source's own Path (see
+/// jellyfin::sourceUrls). Blocking: resolvePlayback() runs inside brls::async, and
+/// the download manager calls it off the UI thread too.
+jellyfin::SourceUrls playbackInfoUrl(const std::string& itemId, const std::string& sourceId,
+    const std::string& tok) {
     try {
         HTTP::Form form = {{"UserId", userId()}};
         std::string url = base() + fmt::format("/Items/{}/PlaybackInfo?{}", itemId, HTTP::encode_form(form));
-        return directStreamUrl(postSync(url, tok, "{}"), sourceId, base(), tok);
+        return sourceUrls(postSync(url, tok, "{}"), sourceId, base(), tok);
     } catch (const std::exception& ex) {
         // a server without PlaybackInfo (or a slow one) keeps the built URL: this
         // path only helps remote sources and must never break the others
         brls::Logger::warning("jellyfin PlaybackInfo {}: {}", itemId, ex.what());
-        return "";
+        return {};
     }
 }
 
@@ -764,17 +766,21 @@ media::PlaybackSource JellyfinBackend::resolvePlayback(
         // (TgtoDrive and the like) rewrite DirectStreamUrl to the CDN's signed
         // link and reject the /Videos/{id}/stream URL built below with a 403.
         if (version.remote) {
+            jellyfin::SourceUrls urls;  // needed by both branches below
             if (!version.sourceId.empty()) {
-                const std::string direct = playbackInfoUrl(item.ratingKey, version.sourceId, tok);
+                urls = playbackInfoUrl(item.ratingKey, version.sourceId, tok);
+                // The .strm target: whatever the item said, or what PlaybackInfo just
+                // reported (same value, but the latter is fresh).
+                const std::string ownUrl = !version.remotePath.empty() ? version.remotePath : urls.path;
                 // A DirectStreamUrl on the server's own host IS the proxy: the server
                 // pulling the cloud file, i.e. the 20 s HttpClient timeout that
                 // produced the HTTP 500. With the .strm target known, the gateway's
                 // own URL is the one that plays, so don't take the proxy URL.
                 const bool viaServer =
-                    !direct.empty() && net::hostFromUrl(direct) == net::hostFromUrl(base());
-                if (!direct.empty() && !(viaServer && !version.remotePath.empty())) {
+                    !urls.direct.empty() && net::hostFromUrl(urls.direct) == net::hostFromUrl(base());
+                if (!urls.direct.empty() && !(viaServer && !ownUrl.empty())) {
                     brls::Logger::info("jellyfin: remote source, playing the server's DirectStreamUrl");
-                    return {direct, e.str(), false, "directplay"};
+                    return {urls.direct, e.str(), false, "directplay"};
                 }
                 if (viaServer)
                     brls::Logger::info("jellyfin: DirectStreamUrl is the server's proxy, prefer the source's own URL");
@@ -784,9 +790,9 @@ media::PlaybackSource JellyfinBackend::resolvePlayback(
             // /Videos/{id}/stream makes the SERVER fetch the cloud file through
             // itself, and Emby answers HTTP 500 once its 20 s HttpClient timeout
             // expires (seen with a local 115 gateway that needs longer).
-            if (!version.remotePath.empty()) {
+            if (!version.remotePath.empty() || !urls.path.empty()) {
                 brls::Logger::info("jellyfin: remote source, playing the media source's own URL");
-                return {version.remotePath, e.str(), false, "directplay"};
+                return {version.remotePath.empty() ? urls.path : version.remotePath, e.str(), false, "directplay"};
             }
             brls::Logger::info("jellyfin: no remote URL, keeping the built stream URL (the server will fetch it)");
         }
@@ -922,12 +928,20 @@ std::string JellyfinBackend::offlineFileUrl(const std::string& itemId, const std
     // /Videos/{id}/stream this falls back to with a 403. One request is what makes
     // the download possible at all.
     if (remote && !sourceId.empty()) {
-        const std::string direct = playbackInfoUrl(itemId, sourceId, token());
-        if (!direct.empty()) {
+        const jellyfin::SourceUrls urls = playbackInfoUrl(itemId, sourceId, token());
+        if (!urls.direct.empty()) {
             brls::Logger::info("jellyfin: remote download, using the server's DirectStreamUrl");
-            return direct;
+            return urls.direct;
         }
-        brls::Logger::info("jellyfin: no usable DirectStreamUrl for the download, keeping the built stream URL");
+        // No DirectStreamUrl: the .strm target is still better than the server's own
+        // proxy, which makes the SERVER fetch the cloud file and 500s after its 20 s
+        // HttpClient timeout. Same rule as playback, resolved HERE because the link
+        // is short-lived.
+        if (!urls.path.empty()) {
+            brls::Logger::info("jellyfin: remote download, using the media source's own URL");
+            return urls.path;
+        }
+        brls::Logger::info("jellyfin: no remote URL for the download, keeping the built stream URL");
     }
     return this->downloadUrl(partKey);
 }

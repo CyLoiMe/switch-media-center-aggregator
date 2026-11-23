@@ -229,6 +229,7 @@ void JellyfinAdd::finish(const std::string& remote, const std::string& local,
     AppUser u;
     u.id = r.userId;
     u.name = r.userName;
+    u.can_download = r.canDownload;
     u.access_token = r.token;
     u.server_id = s.id;
     u.thumb = jellyfin::userImageUrl(active, r.userId, r.userImageTag, this->type == "emby");
@@ -256,6 +257,7 @@ void JellyfinAdd::finishEdit(const std::string& remote, const std::string& local
     AppUser u = this->oldUser;
     if (!r.userId.empty()) u.id = r.userId;
     if (!r.userName.empty()) u.name = r.userName;
+    u.can_download = r.canDownload;
     if (!r.token.empty()) u.access_token = r.token;
     u.server_id = s.id;
     // The avatar URL embeds the user Id: only rebuild it when the login gave one.

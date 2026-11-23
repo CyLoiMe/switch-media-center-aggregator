@@ -77,9 +77,10 @@ public:
         // No original-quality download (Stremio): hide the per-season download
         // button too — otherwise it bypasses the capability gate that already
         // hides the movie/series buttons and just spams "download failed".
-        this->btnDownload->setVisibility(AppConfig::instance().backend().caps().downloadOriginal
-                                             ? brls::Visibility::VISIBLE
-                                             : brls::Visibility::GONE);
+        this->btnDownload->setVisibility(
+            AppConfig::instance().backend().caps().downloadOriginal && AppConfig::instance().canDownload()
+                ? brls::Visibility::VISIBLE
+                : brls::Visibility::GONE);
     }
 
     // Recycle like every other card (BaseCardCell contract): release the poster
@@ -543,7 +544,8 @@ MediaSeries::MediaSeries(const plex::Item& item, bool localContext)
     // whole-show download is meaningless) — hide it like MediaMovie does, rather
     // than offering a button next to an unplayable show. Offline: no new
     // downloads possible either.
-    if (!AppConfig::instance().backend().caps().downloadOriginal || NetworkState::isOffline())
+    if (!AppConfig::instance().backend().caps().downloadOriginal || !AppConfig::instance().canDownload() ||
+        NetworkState::isOffline())
         this->btnDownload->setVisibility(brls::Visibility::GONE);
 
     this->doSeason();

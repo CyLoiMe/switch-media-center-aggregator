@@ -58,16 +58,26 @@ inline bool isInternalHost(const std::string& url) {
 
 }  // namespace detail
 
-/// `DirectStreamUrl` from a PlaybackInfo response, or "" when there is none the
-/// console can actually play (the caller then keeps its own URL).
-///
-/// `sourceId` selects the matching MediaSources entry (falls back to the first);
-/// `serverUrl` + `token` are only used to recognise the server's own host, whose
-/// URL needs the token appended when the server left it out.
-inline std::string directStreamUrl(const nlohmann::json& resp, const std::string& sourceId,
+/// What a PlaybackInfo response offers for one source.
+struct SourceUrls {
+    /// `DirectStreamUrl`, ready to play (token appended when the server left it out).
+    /// Empty when the server gives none the console can use.
+    std::string direct;
+    /// The MediaSource's own absolute URL — the `.strm` target. This is the file the
+    /// server would otherwise fetch through itself; playing or downloading it
+    /// directly is what avoids Emby's 20 s proxy timeout.
+    std::string path;
+};
+
+/// Reads both URLs out of a PlaybackInfo response. `sourceId` selects the matching
+/// MediaSources entry (falls back to the first); `serverUrl` + `token` are only used
+/// to recognise the server's own host, whose URL needs the token appended when the
+/// server left it out.
+inline SourceUrls sourceUrls(const nlohmann::json& resp, const std::string& sourceId,
     const std::string& serverUrl, const std::string& token) {
+    SourceUrls out;
     auto sources = resp.find("MediaSources");
-    if (sources == resp.end() || !sources->is_array()) return "";
+    if (sources == resp.end() || !sources->is_array()) return out;
 
     const nlohmann::json* picked = nullptr;
     for (const auto& source : *sources) {
@@ -78,10 +88,21 @@ inline std::string directStreamUrl(const nlohmann::json& resp, const std::string
             break;
         }
     }
-    if (picked == nullptr) return "";
+    if (picked == nullptr) return out;
+
+    // The source's own URL first: it is worth having even when DirectStreamUrl is
+    // unusable, because it is the only thing that can bypass the server's proxy.
+    // No token is appended — this is not the server, and the front-ends behind it
+    // reject unknown query parameters.
+    const std::string path = media::jstr(*picked, "Path");
+    if (path.rfind("http://", 0) == 0 || path.rfind("https://", 0) == 0) {
+        // same reachability rule as below: a private address only when the server is
+        // private too (the console is on that network)
+        if (!detail::isInternalHost(path) || detail::isInternalHost(serverUrl)) out.path = path;
+    }
 
     std::string url = media::jstr(*picked, "DirectStreamUrl");
-    if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) return "";
+    if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) return out;
 
     const bool ownHost = net::hostFromUrl(url) == net::hostFromUrl(serverUrl);
     // A private address is unreachable only when the server is NOT on that network.
@@ -91,11 +112,19 @@ inline std::string directStreamUrl(const nlohmann::json& resp, const std::string
     // perfectly well. Dropping that URL sent playback back to /Videos/{id}/stream,
     // i.e. the server fetching the cloud file through itself — Emby gives up after
     // its 20 s HttpClient timeout and answers HTTP 500.
-    if (!ownHost && detail::isInternalHost(url) && !detail::isInternalHost(serverUrl)) return "";
+    // Rejected from `direct` only: `path` (above) stays the way out of that proxy.
+    if (!ownHost && detail::isInternalHost(url) && !detail::isInternalHost(serverUrl)) return out;
 
     if (ownHost && !token.empty() && url.find("api_key=") == std::string::npos)
         url += (url.find('?') == std::string::npos ? "?" : "&") + std::string("api_key=") + token;
-    return url;
+    out.direct = url;
+    return out;
+}
+
+/// `DirectStreamUrl` alone: what most callers want, and what the tests exercise.
+inline std::string directStreamUrl(const nlohmann::json& resp, const std::string& sourceId,
+    const std::string& serverUrl, const std::string& token) {
+    return sourceUrls(resp, sourceId, serverUrl, token).direct;
 }
 
 }  // namespace jellyfin

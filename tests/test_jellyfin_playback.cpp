@@ -90,6 +90,30 @@ int main() {
         CHECK(directStreamUrl(response("http://1.2.3.4/v.mp4"), "x", server, token) == "http://1.2.3.4/v.mp4");
     }
 
+    // --- the media source's own URL, alongside DirectStreamUrl -----------
+    {
+        // A cloud item: Path is the .strm target. It is what playback and download
+        // use when the server would otherwise proxy the file through itself.
+        json cloud = json::parse(R"({
+          "MediaSources": [{
+            "Id": "mediasource_390",
+            "Path": "http://192.168.3.244:12366/play115/a.mp4",
+            "DirectStreamUrl": "http://192.168.3.244:12366/play115/a.mp4?sig=1"
+          }]
+        })");
+        // same LAN as the gateway: both URLs usable, no token appended to either
+        CHECK(sourceUrls(cloud, "mediasource_390", "http://192.168.3.10:8096", token).path ==
+              "http://192.168.3.244:12366/play115/a.mp4");
+        CHECK(sourceUrls(cloud, "mediasource_390", "http://192.168.3.10:8096", token).direct ==
+              "http://192.168.3.244:12366/play115/a.mp4?sig=1");
+        // public server: a private Path is unreachable, so it is not offered
+        CHECK(sourceUrls(cloud, "mediasource_390", server, token).path.empty());
+        // a local file has an ordinary path, never an http URL
+        json local = json::parse(R"({"MediaSources":[{"Id":"x","Path":"/media/films/a.mkv"}]})");
+        CHECK(sourceUrls(local, "x", server, token).path.empty());
+        CHECK(sourceUrls(local, "x", server, token).direct.empty());
+    }
+
     // --- malformed responses -----------------------------------------------
     {
         CHECK(directStreamUrl(json::parse("{}"), "x", server, token).empty());  // no MediaSources

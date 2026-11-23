@@ -33,6 +33,8 @@ LoginResult login(const std::string& baseUrl, const std::string& user, const std
         r.userId = jstr(j["User"], "Id");
         r.userName = jstr(j["User"], "Name");
         r.userImageTag = jstr(j["User"], "PrimaryImageTag");
+        if (const auto policy = j["User"].find("Policy"); policy != j["User"].end() && policy->is_object())
+            r.canDownload = policy->value("EnableContentDownloading", true);
     }
     if (r.token.empty() || r.userId.empty()) throw std::runtime_error("Authentication failed");
     return r;

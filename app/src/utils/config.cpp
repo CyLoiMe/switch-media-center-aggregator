@@ -486,6 +486,14 @@ void AppConfig::prunePlaybackQuality() {
     }
 }
 
+bool AppConfig::canDownload() const {
+    // Unknown (no active profile, or a backend without the policy) means allowed:
+    // hiding a working button is worse than offering one the server may refuse.
+    auto profile = std::find_if(this->users.begin(), this->users.end(),
+        [this](const AppUser& u) { return u.id == this->user_id; });
+    return profile == this->users.end() ? true : profile->can_download;
+}
+
 std::string AppConfig::getToken() const {
     // Jellyfin/Emby issue one AccessToken per account, and two accounts on one
     // server share an AppServer entry — so that entry's token only ever holds the

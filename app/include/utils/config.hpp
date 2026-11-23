@@ -66,6 +66,10 @@ struct AppUser {
     /// hides every library on WAN. Stored per PROFILE, because two accounts on one
     /// server see different libraries.
     std::optional<std::vector<std::string>> wan_visible_libraries;
+    /// Jellyfin/Emby account policy `EnableContentDownloading` (true when unknown, so
+    /// an older config never hides a button that works). Plex has no equivalent the
+    /// client can read, and Stremio has no original download at all.
+    bool can_download = true;
 };
 
 /// Hand-written instead of NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT: the
@@ -84,7 +88,8 @@ inline void to_json(nlohmann::json& nlohmann_json_j, const AppUser& nlohmann_jso
         {"name", nlohmann_json_t.name},
         {"access_token", nlohmann_json_t.access_token},
         {"server_id", nlohmann_json_t.server_id},
-        {"thumb", nlohmann_json_t.thumb}};
+        {"thumb", nlohmann_json_t.thumb},
+        {"can_download", nlohmann_json_t.can_download}};
     // Written only when engaged: an absent key reads back as nullopt, which is
     // exactly "never configured" (an engaged EMPTY list must survive as []).
     if (nlohmann_json_t.wan_visible_libraries)
@@ -97,6 +102,7 @@ inline void from_json(const nlohmann::json& nlohmann_json_j, AppUser& nlohmann_j
     nlohmann_json_t.access_token = nlohmann_json_j.value("access_token", std::string{});
     nlohmann_json_t.server_id = nlohmann_json_j.value("server_id", std::string{});
     nlohmann_json_t.thumb = nlohmann_json_j.value("thumb", std::string{});
+    nlohmann_json_t.can_download = nlohmann_json_j.value("can_download", true);
     nlohmann_json_t.wan_visible_libraries.reset();
     if (const auto it = nlohmann_json_j.find("wan_visible_libraries");
         it != nlohmann_json_j.end() && !it->is_null())
@@ -278,6 +284,9 @@ public:
         this->save();
     }
 
+    /// Whether the ACTIVE profile may download (Jellyfin/Emby account policy).
+    /// True for backends that do not report it, so nothing is hidden by default.
+    bool canDownload() const;
     /// Quality override for one title, in bps (0 = none, follow PLAYBACK_MODE).
     /// `key` is "<server>/<titleId>", `title` the name it was chosen for — an entry
     /// whose title no longer matches is dropped (a recycled id must not inherit it).

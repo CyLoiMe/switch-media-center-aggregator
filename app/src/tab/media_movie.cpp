@@ -197,7 +197,9 @@ void MediaMovie::updateDownloadButton() {
     // Backends without original-quality download (Stremio: debrid links are
     // ephemeral) never show this button — avoids offering a download next to a
     // movie that has no playable source either.
-    if (!AppConfig::instance().backend().caps().downloadOriginal) {
+    // Two gates: the backend can do original-quality downloads at all, and this
+    // ACCOUNT is allowed to (Emby/Jellyfin policy; always true elsewhere).
+    if (!AppConfig::instance().backend().caps().downloadOriginal || !AppConfig::instance().canDownload()) {
         this->btnDownload->setVisibility(brls::Visibility::GONE);
         return;
     }

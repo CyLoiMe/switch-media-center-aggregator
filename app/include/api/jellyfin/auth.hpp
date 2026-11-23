@@ -15,6 +15,9 @@ struct LoginResult {
     std::string userId;      // Jellyfin user Id (for /Users/{u}/...)
     std::string userName;
     std::string userImageTag;  // User.PrimaryImageTag, empty without an avatar
+    /// User.Policy.EnableContentDownloading. True when the field is missing (an Emby
+    /// build that does not report it must not hide the button).
+    bool canDownload = true;
     std::string serverId;
     std::string serverName;
 };
