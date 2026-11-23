@@ -18,6 +18,8 @@
 */
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <tinyxml2.h>
 #include "view/auto_tab_frame.hpp"
 #include "view/svg_image.hpp"
@@ -37,6 +39,19 @@ static bool isDescendantOf(brls::View* view, brls::View* root) {
         if (v == root) return true;
     }
     return false;
+}
+
+/// SOUND_BACK, at most once per 250 ms. The two B actions below are repeatable
+/// (holding B retraces the detail stack) and borealis plays an action's sound on
+/// EVERY fire, repeats included — a hold would rattle out ten clicks a second.
+static void playBackSound() {
+    static int64_t lastMs = 0;
+    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    if (nowMs - lastMs < 250) return;
+    lastMs = nowMs;
+    if (auto* audio = brls::Application::getAudioPlayer()) audio->play(brls::SOUND_BACK);
 }
 
 /// first brls::ScrollingFrame of the subtree (DFS): the grid/list whose
@@ -500,8 +515,12 @@ void AutoTabFrame::pushDetailView(brls::View* detail) {
 
     detail->setGrow(1.0f);
     detail->registerAction(
-        "hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return this->popDetailView(); }, false, true,
-        brls::SOUND_BACK);
+        "hints/back"_i18n, brls::BUTTON_B,
+        [this](brls::View*) {
+            playBackSound();
+            return this->popDetailView();
+        },
+        false, true, brls::SOUND_NONE);
 
     this->addView(detail);  // calls willAppear
     // hidden WITHOUT being destroyed: state (scroll, data, inner focus) intact
@@ -1291,13 +1310,14 @@ brls::View* AutoSidebarItem::createAttachedView() {
     this->attachedView->registerAction(
         "hints/back"_i18n, brls::BUTTON_B,
         [this](View* view) {
+            playBackSound();
             if (brls::Application::getInputType() == brls::InputType::TOUCH)
                 this->dismiss();
             else
                 brls::Application::giveFocus(this);
             return true;
         },
-        false, true, brls::SOUND_BACK);
+        false, true, brls::SOUND_NONE);
     return this->attachedView;
 }
 
