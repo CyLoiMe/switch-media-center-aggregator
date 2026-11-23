@@ -41,6 +41,13 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GH_REPO: ${{ github.repository }}
       run: |
+        # A repository can have Issues switched off (this one does): then there is
+        # nowhere to write, and no permission setting changes that. Say so once and
+        # keep the run green — the report is already in this job's summary.
+        if [ "$(gh repo view --json hasIssuesEnabled --jq .hasIssuesEnabled)" != "true" ]; then
+          echo "::warning title=Issues are disabled::The drift report is in this run's Summary. Enable Issues in the repository settings to have it tracked as an issue."
+          exit 0
+        fi
         body=$(cat portlib-drift.md)
         num=$(gh issue list --state open --limit 100 --json number,title \
                 --jq '.[] | select(.title | startswith("Portlib drift")) | .number' | head -1)
