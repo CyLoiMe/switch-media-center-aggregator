@@ -40,6 +40,20 @@ pinned_ver() {  # $1 = package name (mbedtls, ffmpeg, dav1d, curl, libmpv, …)
 }
 
 # ---- where the versions are elsewhere -----------------------------------------
+GMCA_DEPS_URL="$GH_API/repos/thcolin/gamepad-media-center-aggregator/releases/tags/ci-deps"
+
+# The binaries this project actually installs came out of GMCA's `ci-deps` release,
+# not out of their current branch — a release is a snapshot, the branch moved on.
+# One request, reused by every row.
+DEPS_JSON="$(curl -fsSL "${AUTH[@]}" "$GMCA_DEPS_URL" 2>/dev/null || true)"
+
+deps_ver() {  # $1 = asset name prefix (switch-ffmpeg, switch-libmpv-deko3d, …)
+    printf '%s' "$DEPS_JSON" |
+        grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]*"' |
+        sed -E 's/.*"([^"]*)"$/\1/' |
+        sed -n "s/^$1-\([0-9][0-9.]*\)-[0-9]*-any\.pkg\.tar\.zst\$/\1/p" | head -1
+}
+
 grep_ver() {  # $1 = raw PKGBUILD url -> pkgver or ""
     curl -fsSL "$1" 2>/dev/null | sed -n 's/^pkgver=//p' | head -1
 }
@@ -69,8 +83,8 @@ ver_cmp() {  # -1 = $1 older, 0 = equal, 1 = $1 newer
 rows=()
 drift=false
 
-report_row() {  # $1 name, $2 installed, $3 GMCA dev, $4 upstream latest
-    local have="$2" gmc="$3" up="$4" note
+report_row() {  # $1 name, $2 installed, $3 GMCA ci-deps, $4 GMCA dev, $5 upstream latest
+    local have="$2" deps="$3" gmc="$4" up="$5" note
     if [ -z "$up" ]; then
         note="upstream unknown"
     else
@@ -83,16 +97,21 @@ report_row() {  # $1 name, $2 installed, $3 GMCA dev, $4 upstream latest
                 ;;
         esac
     fi
-    # somebody else already did the rebase we cannot do
-    if [ -n "$gmc" ] && [ "$(ver_cmp "$gmc" "$have")" = "1" ]; then
-        note="$note; GMCA is newer ($gmc)"
+    # somebody already built something newer — either their release or their tree
+    if [ -n "$deps" ] && [ "$(ver_cmp "$deps" "$have")" = "1" ]; then
+        note="$note; a newer GMCA build exists ($deps)"
         drift=true
     fi
-    rows+=("| $1 | $have | ${gmc:-?} | ${up:-?} | $note |")
+    if [ -n "$gmc" ] && [ "$(ver_cmp "$gmc" "$have")" = "1" ]; then
+        note="$note; GMCA tree is newer ($gmc)"
+        drift=true
+    fi
+    rows+=("| $1 | $have | ${deps:-?} | ${gmc:-?} | ${up:-?} | $note |")
 }
 
 for lib in ffmpeg mbedtls dav1d curl; do
     have=$(pinned_ver "$lib")
+    deps=$(deps_ver "switch-$lib")
     gmc=$(grep_ver "$GMCA_RAW/$lib/PKGBUILD")
     up=""
     case "$lib" in
@@ -119,28 +138,32 @@ for lib in ffmpeg mbedtls dav1d curl; do
                 json_str tag_name | sed 's/^curl-//; s/_/./g' || true)
             ;;
     esac
-    report_row "$lib" "$have" "$gmc" "$up"
+    report_row "$lib" "$have" "$deps" "$gmc" "$up"
 done
 
 # libmpv: ours is the deko3d variant, nobody else ships it — only report whether
 # GMCA moved and how far mpv itself has gone.
 have=$(pinned_ver libmpv)
+# the deko3d build is the one we use; the plain switch-libmpv is a different asset
+deps=$(deps_ver switch-libmpv-deko3d)
 gmc=$(grep_ver "$GMCA_RAW/mpv/PKGBUILD")
 up=$(curl -fsSL "${AUTH[@]}" "$GH_API/repos/mpv-player/mpv/releases/latest" 2>/dev/null |
     json_str tag_name | sed 's/^v//' || true)
-report_row "libmpv (deko3d)" "$have" "$gmc" "$up"
+report_row "libmpv (deko3d)" "$have" "$deps" "$gmc" "$up"
 
 {
     echo "## Portlib versions"
     echo
     echo "Checked $(date -u +%Y-%m-%d). Read-only report: nothing is built or bumped."
     echo
-    echo "| library | build installs | GMCA dev | upstream latest | verdict |"
-    echo "|---|---|---|---|---|"
+    echo "| library | build installs | GMCA ci-deps | GMCA dev | upstream latest | verdict |"
+    echo "|---|---|---|---|---|---|"
     printf '%s\n' "${rows[@]}"
     echo
+    echo "\`GMCA ci-deps\` is where these binaries actually came from (release"
+    echo "2026-09-23) — a snapshot, so it can be newer than GMCA's current tree."
     echo "\`GMCA dev\` is the fork \`scripts/switch\` was copied from: newer there means"
-    echo "someone already did the patch rebase, and its \`ci-deps\` release can be used."
+    echo "someone already did the patch rebase."
     echo "\`upstream latest\` is the library itself — where security fixes land; being"
     echo "behind it is the cost of frozen binaries, not a bug."
     echo
