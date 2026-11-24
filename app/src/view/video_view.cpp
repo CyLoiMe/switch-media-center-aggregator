@@ -891,8 +891,10 @@ bool VideoView::close(bool quit) {
         static bool popping = false;
         if (popping) return true;  // a second B before the tick must not queue another pop
         popping = true;
+        brls::Logger::info("player: exit requested, pop deferred to the next tick");
         brls::sync([]() {
             popping = false;
+            brls::Logger::info("player: popping the activity now");
             brls::Application::popActivity(brls::TransitionAnimation::NONE);
         });
         return true;

@@ -1,4 +1,8 @@
 #include <borealis.hpp>
+#include <cstdio>
+#ifdef __SWITCH__
+#include <unistd.h>
+#endif
 
 #include "utils/config.hpp"
 #include "utils/download.hpp"
@@ -110,6 +114,22 @@ int main(int argc, char* argv[]) {
             items.push_back(argv[i]);
         }
     }
+
+#ifdef __SWITCH__
+    // Crash triage without command-line arguments (the HOME tile and hbmenu give
+    // us none): an empty `crashlog` file next to config.json turns on line-buffered
+    // file logging for this run only. Delete the file to go back to console-only.
+    // Line buffering matters: without it the last ~16 KB, including the line right
+    // before a crash, stays in the buffer and dies with the process.
+    if (access("sdmc:/switch/SMCA/crashlog", F_OK) == 0) {
+        if (FILE* f = std::fopen("sdmc:/switch/SMCA/last-run.log", "w+")) {
+            std::setvbuf(f, nullptr, _IOLBF, 0);
+            brls::Logger::setLogOutput(f);
+            brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
+            brls::Logger::info("crash log enabled by switch/SMCA/crashlog");
+        }
+    }
+#endif
 
     std::setlocale(LC_ALL, "C.UTF-8");
     // Load cookies and settings
