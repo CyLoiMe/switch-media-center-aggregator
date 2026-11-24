@@ -726,6 +726,30 @@ brls::View* RecyclingGrid::getNextCellFocus(brls::FocusDirection direction, brls
             }
             row_currentFocusIndex += row_offset;
         }
+
+        // The loop above only looks at cells that are already attached, and the
+        // recycler keeps nothing beyond what is on screen. A jump to a row that is not
+        // materialised yet — the focus restored after a rebuild, a grid that just
+        // reloaded — therefore matched nothing and the code below let the focus leave
+        // the grid entirely. On screen: the highlight vanished, the list nudged, and
+        // one more press landed two rows further. Scroll the wanted row into range and
+        // look again before falling through.
+        const size_t wanted = *((size_t*)parentUserData) + row_offset;
+        if (!row_currentFocus && wanted < this->dataSource->getItemCount()) {
+            this->selectRowAt(wanted, false);
+            for (auto it : this->contentBox->getChildren()) {
+                if (!it->getParentUserData()) continue;
+                if (*((size_t*)it->getParentUserData()) == wanted) {
+                    row_currentFocus = it->getDefaultFocus();
+                    break;
+                }
+            }
+            if (!row_currentFocus)
+                brls::Logger::warning("grid: {} found no cell at {} (count {}, span {})",
+                    direction == brls::FocusDirection::UP ? "up" : "down", wanted,
+                    this->dataSource->getItemCount(), spanCount);
+        }
+
         if (row_currentFocus) {
             // 按键(上或下)可以导航过去的情况
             itemsRecyclingLoop();

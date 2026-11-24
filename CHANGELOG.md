@@ -42,6 +42,14 @@
 
 ### Fixed
 
+- **Pressing down in a list no longer loses the focus.** `RecyclingGrid`'s up/down
+  search only looked at cells that were already attached, and the recycler keeps
+  nothing beyond what is on screen — so a jump to a row that was not materialised yet
+  (the focus restored after closing the player, a grid that just reloaded) matched
+  nothing, and the code then handed the focus to the grid's parent. On screen: the
+  highlight vanished, the list nudged, and one more press landed two rows further. It
+  now scrolls the wanted row into range and looks again before falling through, and
+  logs a warning if even that finds nothing.
 - **The focus comes back to the rows after closing the player.** Restoring it took a
   single deferred frame, but a row that has just been handed a data source has no
   laid-out cells yet, so the attempt found nothing and focused the scroll container:
