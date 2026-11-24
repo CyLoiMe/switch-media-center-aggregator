@@ -47,6 +47,10 @@ private:
     /// answer for the deleted one used to be written into freed memory (Instruction
     /// Abort at 0 on hardware). The callback compares this before it writes.
     uint32_t resumeGeneration = 0;
+    /// Same idea for doHubs(): its answer APPENDS rows, so a rebuild that happens
+    /// while the request is in flight would otherwise leave the hubs duplicated on
+    /// top of the rebuilt ones.
+    uint32_t hubsGeneration = 0;
     MPVCustomEvent::Subscription playbackEndedSub{};
     // offline empty state: added to the tab root (definite height) with the
     // scroll hidden, so it centers — a grow child of the scroll content would

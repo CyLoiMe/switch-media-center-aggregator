@@ -10,6 +10,7 @@
 #include "view/recycling_grid.hpp"
 #include "view/svg_image.hpp"
 #include "view/video_card.hpp"
+#include <borealis/core/thread.hpp>
 #include "view/video_source.hpp"
 #include "view/auto_tab_frame.hpp"
 #include "utils/image.hpp"
@@ -37,12 +38,12 @@ public:
         brls::Logger::debug("WatchlistFilter: create");
 
         this->registerAction("hints/cancel"_i18n, brls::BUTTON_B, [this](...) {
-            brls::Application::popActivity(brls::TransitionAnimation::NONE, [this]() { this->event.fire(); });
+            this->close();
             return true;
         });
 
         this->cancel->registerClickAction([this](...) {
-            brls::Application::popActivity(brls::TransitionAnimation::NONE, [this]() { this->event.fire(); });
+            this->close();
             return true;
         });
         this->cancel->addGestureRecognizer(new brls::TapGestureRecognizer(this->cancel));
@@ -85,6 +86,20 @@ public:
 
     brls::VoidEvent* getEvent() { return &this->event; }
 
+    /// Close the filter. Notify first, while this is still alive, then pop on the next
+    /// main-loop turn. Both halves matter: `Application::handleAction` keeps using the
+    /// view that received the button after the listener returns, and a NONE-transition
+    /// pop deletes it inline (AGENTS trap 14); the old code also passed `this` into the
+    /// pop's own callback, which runs after `delete last` — an event fired on a
+    /// destroyed object. The subscriber only compares the filter tuple and refreshes
+    /// the list behind, so notifying before the pop is safe.
+    void close() {
+        if (this->closing) return;  // B then a tap before the tick
+        this->closing = true;
+        this->event.fire();
+        brls::sync([]() { brls::Application::popActivity(brls::TransitionAnimation::NONE); });
+    }
+
     /// (Session) state shared with WatchlistTab::doRequest
     inline static int selectedSort = 0;   // index into sortList
     inline static int selectedOrder = 1;  // 0 ascending, 1 descending
@@ -106,6 +121,9 @@ private:
     BRLS_BIND(brls::SelectorCell, filterAvailability, "watchlist/filter/availability");
 
     brls::VoidEvent event;
+    /// guards close(): the pop happens a tick later, so a second press/tap must not
+    /// queue another one
+    bool closing = false;
 };
 
 /// 2:3 poster cards: provider poster + title + year.

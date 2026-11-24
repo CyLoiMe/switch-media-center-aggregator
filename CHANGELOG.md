@@ -42,6 +42,18 @@
 
 ### Fixed
 
+- **No view is popped from inside its own button handler any more.** The watchlist
+  filter's B/Cancel and the long-press menu's actions (go to series, go to season,
+  mark watched/unwatched) popped the activity with `TransitionAnimation::NONE` from
+  the listener that received the press, which deletes the view inline while
+  `Application::handleAction` is still reading it — the same use-after-free that
+  crashed the player on every B. The watchlist filter also fired its event from the
+  pop's own callback, i.e. after `delete last`: it now notifies first, then pops on
+  the next main-loop turn.
+- **The home rows can no longer be duplicated.** `doHubs()` appends its rows to the
+  box, so an answer that arrived after a rebuild added the hubs on top of the rebuilt
+  ones. A generation counter makes a superseded answer a no-op, the same way
+  `doResume()` stopped writing into a deleted row.
 - **Pressing down in a list no longer loses the focus.** `RecyclingGrid`'s up/down
   search only looked at cells that were already attached, and the recycler keeps
   nothing beyond what is on screen — so a jump to a row that was not materialised yet

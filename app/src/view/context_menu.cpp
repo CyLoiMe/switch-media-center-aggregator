@@ -9,8 +9,26 @@
 #include "api/plex/watchlist.hpp"
 #include "api/backend.hpp"
 #include "utils/download.hpp"
+#include <functional>
 
 using namespace brls::literals;
+
+namespace {
+
+/// Leave the action listener before popping the menu. `Application::handleAction`
+/// keeps reading the view that received the button after the listener returns
+/// (its action's sound, then `hintParent->getParent()`), and a NONE-transition pop
+/// deletes that view inline — AGENTS trap 14, which crashed the player on every B.
+/// The callback still runs after the activity is gone, so callers keep using it for
+/// "present the next page" work; `after` may be empty.
+void popWhenIdle(std::function<void()> after) {
+    brls::sync([after]() {
+        brls::Application::popActivity(
+            brls::TransitionAnimation::NONE, after ? after : std::function<void()>([]() {}));
+    });
+}
+
+}  // namespace
 
 const std::string menuItemXML = R"xml(
     <brls:Box
@@ -95,7 +113,7 @@ ContextMenu::ContextMenu(const plex::Item& item, brls::Box* host) : host(host), 
     if (!item.grandparentRatingKey.empty()) {
         this->btnGoSeries->setVisibility(brls::Visibility::VISIBLE);
         this->btnGoSeries->registerClickAction([item, host](...) {
-            brls::Application::popActivity(brls::TransitionAnimation::NONE, [item, host]() {
+            popWhenIdle([item, host]() {
                 plex::Item series;
                 series.ratingKey = item.grandparentRatingKey;
                 series.type = plex::mediaTypeShow;
@@ -109,7 +127,7 @@ ContextMenu::ContextMenu(const plex::Item& item, brls::Box* host) : host(host), 
     } else if (item.type == plex::mediaTypeSeason && !item.parentRatingKey.empty()) {
         this->btnGoSeries->setVisibility(brls::Visibility::VISIBLE);
         this->btnGoSeries->registerClickAction([item, host](...) {
-            brls::Application::popActivity(brls::TransitionAnimation::NONE, [item, host]() {
+            popWhenIdle([item, host]() {
                 plex::Item series;
                 series.ratingKey = item.parentRatingKey;
                 series.type = plex::mediaTypeShow;
@@ -124,7 +142,7 @@ ContextMenu::ContextMenu(const plex::Item& item, brls::Box* host) : host(host), 
     if (item.type == plex::mediaTypeEpisode && !item.parentRatingKey.empty()) {
         this->btnGoSeason->setVisibility(brls::Visibility::VISIBLE);
         this->btnGoSeason->registerClickAction([item, host](...) {
-            brls::Application::popActivity(brls::TransitionAnimation::NONE, [item, host]() {
+            popWhenIdle([item, host]() {
                 plex::Item season;
                 season.ratingKey = item.parentRatingKey;
                 season.type = plex::mediaTypeSeason;
@@ -253,7 +271,7 @@ bool ContextMenu::doPlayed() {
     AppConfig::instance().backend().markWatched(this->itemId);
     this->btnMarkPlay->setSelected(true);
     this->refreshCard(true);
-    brls::Application::popActivity(brls::TransitionAnimation::NONE);
+    popWhenIdle(nullptr);
     return true;
 }
 
@@ -262,7 +280,7 @@ bool ContextMenu::unPlayed() {
     AppConfig::instance().backend().markUnwatched(this->itemId);
     this->btnMarkPlay->setSelected(false);
     this->refreshCard(false);
-    brls::Application::popActivity(brls::TransitionAnimation::NONE);
+    popWhenIdle(nullptr);
     return true;
 }
 

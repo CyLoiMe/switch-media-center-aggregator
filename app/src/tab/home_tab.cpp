@@ -41,6 +41,7 @@ brls::View* HomeTab::create() { return new HomeTab(); }
 void HomeTab::doRequest() {
     // anything the rows pointed at is about to be destroyed by clearViews()
     this->resumeRow = nullptr;
+    ++this->hubsGeneration;  // an in-flight hub answer must not append to the new rows
     // drop any previous offline empty overlay -> back to the scrollable list
     if (this->offlineEmpty) {
         this->removeView(this->offlineEmpty);
@@ -145,10 +146,15 @@ void HomeTab::doResume(RecylingVideo* row) {
 }
 
 void HomeTab::doHubs() {
+    // Unlike doResume(), this answer ADDS rows: a rebuild that landed while the
+    // request was in flight would leave its hubs on top of the rebuilt ones. The
+    // generation makes a superseded answer a no-op.
+    const uint32_t gen = ++this->hubsGeneration;
     ASYNC_RETAIN
     AppConfig::instance().backend().getHomeHubs(20, true,
-        [ASYNC_TOKEN](const media::Container<media::Hub>& r) {
+        [ASYNC_TOKEN, gen](const media::Container<media::Hub>& r) {
             ASYNC_RELEASE
+            if (gen != this->hubsGeneration) return;  // a newer rebuild owns the rows
             for (auto& hub : r.Items) {
                 if (hub.items.empty()) continue;
                 // in case the server returns them despite excludeContinueWatching
@@ -187,8 +193,9 @@ void HomeTab::doHubs() {
             this->spinner->setSpinning(false);
             this->tryRestoreFocus();
         },
-        [ASYNC_TOKEN](const std::string& ex) {
+        [ASYNC_TOKEN, gen](const std::string& ex) {
             ASYNC_RELEASE
+            if (gen != this->hubsGeneration) return;  // superseded: do not report it
             this->spinner->setSpinning(false);
             auto dialog = new brls::Dialog(ex);
             dialog->addButton("hints/retry"_i18n, [this]() { brls::sync([this]() { this->doRequest(); }); });
