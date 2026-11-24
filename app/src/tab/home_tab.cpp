@@ -99,10 +99,22 @@ void HomeTab::doRequest() {
 }
 
 void HomeTab::doResume(RecylingVideo* row) {
+    // The row must not travel into the answer. It is a child of boxHome, and
+    // doRequest() deletes the rows it replaces (nulling resumeRow first) — so an
+    // answer that arrived after a rebuild wrote into freed memory: on hardware that
+    // was an Instruction Abort at 0, i.e. a virtual call through the dead object,
+    // with "继续观看" on the stack. Carry a generation and re-read the member
+    // instead: a non-null member is always a live row, and a newer request makes an
+    // older answer a no-op.
+    (void)row;
+    const uint32_t gen = ++this->resumeGeneration;
     ASYNC_RETAIN
     AppConfig::instance().backend().getContinueWatching(20,
-        [ASYNC_TOKEN, row](const media::Container<media::Hub>& r) {
+        [ASYNC_TOKEN, gen](const media::Container<media::Hub>& r) {
             ASYNC_RELEASE
+            if (gen != this->resumeGeneration) return;  // a newer request owns the row now
+            RecylingVideo* row = this->resumeRow;
+            if (!row) return;                            // the rows were dropped meanwhile
             for (auto& hub : r.Items) {
                 if (hub.items.empty()) continue;
                 std::string title = hub.title.empty() ? "main/home/resume"_i18n : hub.title;
@@ -118,9 +130,10 @@ void HomeTab::doResume(RecylingVideo* row) {
             }
             row->setItems({});
         },
-        [ASYNC_TOKEN, row](const std::string& ex) {
+        [ASYNC_TOKEN, gen](const std::string& ex) {
             ASYNC_RELEASE
-            row->setItems({});
+            if (gen != this->resumeGeneration) return;
+            if (RecylingVideo* row = this->resumeRow) row->setItems({});
             brls::Logger::warning("home continueWatching: {}", ex);
         });
 }

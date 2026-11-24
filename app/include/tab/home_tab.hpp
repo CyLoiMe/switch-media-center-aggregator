@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include <view/auto_tab_frame.hpp>
 #include <view/presenter.hpp>
 
@@ -36,6 +38,11 @@ private:
     /// row: the tab is cached and never re-requests when it is re-attached, which is
     /// why a film just watched was missing from it (utils/playback_events.hpp).
     RecylingVideo* resumeRow = nullptr;
+    /// Bumped by every doResume() call. An answer that belongs to an older request
+    /// must not touch the row: doRequest() deletes the rows it replaces, and the
+    /// answer for the deleted one used to be written into freed memory (Instruction
+    /// Abort at 0 on hardware). The callback compares this before it writes.
+    uint32_t resumeGeneration = 0;
     MPVCustomEvent::Subscription playbackEndedSub{};
     // offline empty state: added to the tab root (definite height) with the
     // scroll hidden, so it centers — a grow child of the scroll content would

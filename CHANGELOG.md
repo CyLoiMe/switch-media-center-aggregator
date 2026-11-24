@@ -42,15 +42,23 @@
 
 ### Fixed
 
-- **B in the player no longer crashes the app.** Exiting popped the activity with
-  `TransitionAnimation::NONE`, and a non-animated pop runs its deletion callback
-  INLINE (`Activity::hide` → `View::hide(cb, animated=false)` → `cb()` → `delete
-  last`). The `VideoView` that received the B press was therefore freed while
-  `Application::handleAction` was still using it — right after the listener returns
-  it plays `action->getSound()` and then walks `hintParent->getParent()`. A
-  use-after-free on every exit during playback; a FADE pop would have deferred it
-  by a frame, which is why only this path crashed. The pop is now posted to the
-  next main-loop turn.
+- **B in the player no longer crashes: the "Continue watching" answer was written
+  into a deleted row.** Leaving the player fires two refreshes — `VIDEO_CLOSE`
+  rebuilds the tab (`HomeTab::doRequest`, which deletes every row it replaces) while
+  the playback-ended event asks for just that row — so the first request's row was
+  already gone when its answer arrived, and `row->setTitle()` ran on freed memory.
+  On hardware the console reported an Instruction Abort at address 0 (a virtual call
+  through the dead object) with the "继续观看" title being built on the stack.
+  `doResume()` now carries a generation number and re-reads `resumeRow` in the
+  callback: a newer request makes an older answer a no-op, and a null member means
+  the rows were dropped.
+- **Exiting the player defers the pop to the next main-loop turn.** A
+  `TransitionAnimation::NONE` pop runs its deletion callback inline
+  (`Activity::hide` → `View::hide(cb, animated=false)` → `delete last`), so the view
+  that received the B press was freed while `Application::handleAction` was still
+  reading it (`action->getSound()`, `hintParent->getParent()`). Hardening, not the
+  cause of the crash above — `popActivity`'s FADE default hides the same hazard by
+  deleting a frame later.
 - **Direct play uses the URL the server hands out, for local sources too.** The
   hand-built `/Videos/{id}/stream?static=true` is answered whole-file by some Emby
   versions: the client asks for `Range: bytes=995952-` and gets
