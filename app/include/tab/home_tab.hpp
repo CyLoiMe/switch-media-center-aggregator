@@ -27,6 +27,10 @@ private:
     void doResume(RecylingVideo* row);
     void doHubs();
     void tryRestoreFocus();
+    /// Gives the focus back to the first row's first card, retrying for a few frames:
+    /// a row that has just been handed a data source has no laid-out cells yet, so a
+    /// single attempt lands on the scroll container and the user sees no focus at all.
+    void focusRows(int remaining);
 
     // set when a refresh destroys the focused row (e.g. after closing the
     // player): the first rebuilt row takes the focus back so the user can

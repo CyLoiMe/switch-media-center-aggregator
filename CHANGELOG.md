@@ -42,6 +42,15 @@
 
 ### Fixed
 
+- **The focus comes back to the rows after closing the player.** Restoring it took a
+  single deferred frame, but a row that has just been handed a data source has no
+  laid-out cells yet, so the attempt found nothing and focused the scroll container:
+  the screen looked as if nothing was selected. The tab now retries for a few frames
+  until a real card exists (and stops as soon as the focus is no longer its to
+  place, so it cannot yank it away from the user). The rebuild also treats "nothing
+  is focused at all" as "the focus was here" — a pop can leave the whole app without
+  focus when it deleted the card that had it; a background tab cannot see a null
+  focus, so this does not steal from another tab.
 - **B in the player no longer crashes: the "Continue watching" answer was written
   into a deleted row.** Leaving the player fires two refreshes — `VIDEO_CLOSE`
   rebuilds the tab (`HomeTab::doRequest`, which deletes every row it replaces) while

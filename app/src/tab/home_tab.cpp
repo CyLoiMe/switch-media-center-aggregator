@@ -79,7 +79,13 @@ void HomeTab::doRequest() {
     // clearViews destroys the focused card when refreshing after playback:
     // remember to give the focus back to the first rebuilt row, otherwise it
     // falls back to the sidebar and the user loses track of it
-    this->restoreFocus = hasFocusWithin(this);
+    // Restore the focus if it is here — or if nothing is focused at all, which is
+    // what a pop from the player can leave behind when the focused card was deleted
+    // with the rows. A background tab cannot see a null focus (another tab owns it),
+    // so this does not steal it.
+    this->restoreFocus = hasFocusWithin(this) || brls::Application::getCurrentFocus() == nullptr;
+    brls::Logger::info("home: rebuild, restoreFocus={} focus={}", this->restoreFocus,
+        brls::Application::getCurrentFocus() ? brls::Application::getCurrentFocus()->describe() : "(none)");
     this->spinner->setSpinning(true);
     this->boxHome->clearViews();
 
@@ -194,13 +200,36 @@ void HomeTab::doHubs() {
 void HomeTab::tryRestoreFocus() {
     if (!this->restoreFocus) return;
     this->restoreFocus = false;
-    // deferred one frame: the rows added by this callback are not laid out
-    // yet, and giveFocus before the first layout fails silently
+    this->focusRows(5);
+}
+
+void HomeTab::focusRows(int remaining) {
+    // Deferred: the rows were just handed a data source, and the recycler builds its
+    // cells on the next layout. One attempt therefore finds no card, focuses the
+    // scroll container instead, and the screen looks like nothing is focused — so try
+    // again for a few frames, but only while the focus is still ours to place (never
+    // override a card the user has already moved to).
     ASYNC_RETAIN
-    brls::sync([ASYNC_TOKEN]() {
+    brls::sync([ASYNC_TOKEN, remaining]() {
         ASYNC_RELEASE
         brls::View* target = this->boxHome->getDefaultFocus();
-        if (target) brls::Application::giveFocus(target);
+        brls::View* current = brls::Application::getCurrentFocus();
+        // Only place the focus while it is still ours to place: null (a pop that
+        // deleted the focused card), or the scroll container we just fell back to.
+        // Anything else means the user has already moved — never yank it back.
+        const bool ours = !current || current == this->scroll || current == this->boxHome;
+        const bool card = target && target != this->scroll && target != this->boxHome;
+        if (!card && remaining > 0 && ours) {
+            this->focusRows(remaining - 1);
+            return;
+        }
+        if (!ours) return;
+        if (target) {
+            brls::Logger::info("home: focus -> {}", target->describe());
+            brls::Application::giveFocus(target);
+        } else {
+            brls::Logger::warning("home: no focus target, rows are empty");
+        }
     });
 }
 
