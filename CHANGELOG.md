@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-25
+
+Second public release. The two things people hit hardest are gone: a LAN episode no
+longer spins for twenty seconds before the first frame (the player now uses the URL
+the server hands out, which honours HTTP Range), and pressing **B** during playback
+no longer closes the app. Navigation got the same treatment — left no longer jumps
+to the sidebar, and the focus stays where you left it — and a series page now says
+which episode **Play** will start.
+
 ### Changed
 
 - **Left no longer jumps to the sidebar from inside a tab.** The sidebar sits left of
@@ -39,6 +48,26 @@
   a dialog explaining why (the server has no encoder for a file it would first have
   to pull through itself). The rule was previously invisible — only a hidden menu
   and a toast.
+
+### Added
+
+- The player's OSD title now ends with the path it took — `· Direct` or
+  `· Transcode 8 Mbps` — so "why is this one slower?" no longer needs a log. The
+  badge follows a quality switch, which reloads through the same code.
+- The account policy is re-read at launch (`/Users/{id}`), so revoking a user's
+  download permission now hides the button without a re-login. A failed refresh
+  keeps the stored value: a network blip must not hide a working button.
+- A series page now says what Play will do and which episode it means: the button
+  reads *Resume* when it continues a half-watched episode (and *Play again* after the
+  show is finished), with `S8E9 · title` under it. The data was already fetched for
+  that button (`getNextUp`); it simply was not shown.
+- Home-video libraries. Emby's "Photos & videos" library (`CollectionType:
+  homevideos`) and Jellyfin's "Home videos" now get a sidebar tab, list their
+  videos and play one on **A** like a clip — no detail page, because a home video
+  has no overview and no seasons. Its videos also reach *Continue Watching* and the
+  per-library "Recently added" home row. The **photos** in such a library are not
+  shown: the grid asks the server for `IncludeItemTypes=Video` only, since there is
+  no photo viewer yet.
 
 ### Fixed
 
@@ -156,29 +185,6 @@
   source, and the dialog shows the first error. A one-line log per attempt
   (`playback <id>: method=… remote=… cap=… maxHeight=…`) makes the three paths
   distinguishable in a user's log.
-
-### Added
-
-- The player's OSD title now ends with the path it took — `· Direct` or
-  `· Transcode 8 Mbps` — so "why is this one slower?" no longer needs a log. The
-  badge follows a quality switch, which reloads through the same code.
-- The account policy is re-read at launch (`/Users/{id}`), so revoking a user's
-  download permission now hides the button without a re-login. A failed refresh
-  keeps the stored value: a network blip must not hide a working button.
-- A series page now says what Play will do and which episode it means: the button
-  reads *Resume* when it continues a half-watched episode (and *Play again* after the
-  show is finished), with `S8E9 · title` under it. The data was already fetched for
-  that button (`getNextUp`); it simply was not shown.
-- Home-video libraries. Emby's "Photos & videos" library (`CollectionType:
-  homevideos`) and Jellyfin's "Home videos" now get a sidebar tab, list their
-  videos and play one on **A** like a clip — no detail page, because a home video
-  has no overview and no seasons. Its videos also reach *Continue Watching* and the
-  per-library "Recently added" home row. The **photos** in such a library are not
-  shown: the grid asks the server for `IncludeItemTypes=Video` only, since there is
-  no photo viewer yet.
-
-### Fixed
-
 - Settings → Others no longer carries three switches that do nothing. "Fullscreen",
   "Always on top" and "Single instance" lost their handlers when the desktop code
   path was removed, but their cells stayed in the XML: three untitled toggles that
