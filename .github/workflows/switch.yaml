@@ -48,6 +48,7 @@ jobs:
         # the tests include nlohmann from borealis' tree (it lives in the submodule)
         submodules: recursive
     - name: Run logic tests
+      shell: bash
       run: |
         set +e
         bash tests/run.sh 2>&1 | tee /tmp/logic.txt
@@ -99,6 +100,9 @@ jobs:
         make -C libusbhsfs BUILD_TYPE=GPL install -j$(nproc)
 
     - name: Build NRO
+      # Explicit: a job in a container defaults to `sh`, and this step uses bash's
+      # PIPESTATUS to keep the compiler's exit code through `tee`.
+      shell: bash
       run: |
         set +e
         (
