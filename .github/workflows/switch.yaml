@@ -45,7 +45,16 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Run logic tests
-      run: bash tests/run.sh
+      run: |
+        set +e
+        bash tests/run.sh 2>&1 | tee /tmp/logic.txt
+        rc=${PIPESTATUS[0]}
+        if [ "$rc" -ne 0 ]; then
+          # Annotations are readable without a token (the job log is not), so a
+          # failure here can be diagnosed from anywhere.
+          tail -n 40 /tmp/logic.txt | sed 's/^/::error::/' || true
+        fi
+        exit "$rc"
 
   build:
     runs-on: ubuntu-latest
@@ -88,13 +97,23 @@ jobs:
 
     - name: Build NRO
       run: |
-        cmake -B build ${{ env.CMAKE_DRIVER }} \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DPLATFORM_SWITCH=ON \
-          -DUSE_LIBUSBHSFS=ON \
-          -DBUILTIN_NSP=${{ github.event.inputs.no_forwarder && 'OFF' || 'ON' }} \
-          -DVERSION_BUILD=${{ github.run_number }}
-        make -C build SMCA.nro -j$(nproc)
+        set +e
+        (
+          cmake -B build ${{ env.CMAKE_DRIVER }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPLATFORM_SWITCH=ON \
+            -DUSE_LIBUSBHSFS=ON \
+            -DBUILTIN_NSP=${{ github.event.inputs.no_forwarder && 'OFF' || 'ON' }} \
+            -DVERSION_BUILD=${{ github.run_number }} &&
+          make -C build SMCA.nro -j$(nproc)
+        ) 2>&1 | tee /tmp/build.txt
+        rc=${PIPESTATUS[0]}
+        if [ "$rc" -ne 0 ]; then
+          # Compiler diagnostics as annotations: `error:` lines first, then the tail.
+          grep -E "error:|Error " /tmp/build.txt | head -n 20 | sed 's/^/::error::/' || true
+          tail -n 20 /tmp/build.txt | sed 's/^/::error::/' || true
+        fi
+        exit "$rc"
 
     - name: Upload NRO
       uses: actions/upload-artifact@v6
