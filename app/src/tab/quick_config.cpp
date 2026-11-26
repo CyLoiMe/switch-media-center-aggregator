@@ -48,7 +48,19 @@ QuickConfig::QuickConfig() {
 
 QuickConfig::~QuickConfig() {
     brls::Logger::debug("Tab QuickConfig: delete");
-    portal::Portal::instance().close();
+    // The destructor runs inside the deletion pass of Application::frame(), and it
+    // is implicitly noexcept: anything thrown here (a thread operation, an
+    // allocation, a socket layer that decides to throw) is std::terminate, i.e.
+    // "the software was closed because an error occurred" on the way out of a
+    // settings page. Closing a listener cannot be allowed to fail that way.
+    try {
+        portal::Portal::instance().close();
+    } catch (const std::exception& ex) {
+        brls::Logger::error("quick config: stopping the portal failed: {}", ex.what());
+    } catch (...) {
+        brls::Logger::error("quick config: stopping the portal failed");
+    }
+    brls::Logger::debug("Tab QuickConfig: deleted");
 }
 
 brls::View* QuickConfig::getDefaultFocus() { return this; }

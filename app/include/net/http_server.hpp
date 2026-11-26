@@ -9,13 +9,14 @@
     anything else).
 
     Lifetime, because that is what usually goes wrong:
-      - the server owns a shared State; the accept thread and every request thread
-        hold a shared_ptr to it, so `stop()` can return without waiting for a slow
-        request to finish;
-      - `stop()` closes the listening socket and joins only the accept loop, which
-        wakes on a 500 ms poll tick — never the request threads, which may be
-        waiting on the UI thread for a config write. Joining those from the UI
-        thread would deadlock the app, so they are left to finish on their own.
+      - the server owns a shared State; every thread holds a shared_ptr to it, so
+        `stop()` can return immediately and the state dies with the last thread;
+      - `stop()` only flips the running flag and detaches both threads. It does not
+        join (that would block a frame for a poll tick) and it does not close the
+        listening socket — the accept loop owns that fd and closes it when it wakes
+        (kAcceptPollMs). Closing a socket from another thread while it sits in
+        poll()/accept() is a data abort, not an error code: that is what killed the
+        app every time the portal page was left;
       - the handler must therefore not depend on the server object still existing.
         The portal passes a lambda over its singleton, which lives for the process.
 */

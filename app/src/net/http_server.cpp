@@ -26,7 +26,11 @@ namespace {
 constexpr int kRecvTimeoutSec = 5;
 constexpr int kSendTimeoutSec = 5;
 constexpr int kBacklog = 8;
-constexpr int kAcceptPollMs = 500;
+/// How long the accept loop sleeps in poll(). It bounds how late a stopped server
+/// lets go of its port, because that thread is the one that closes the socket.
+constexpr int kAcceptPollMs = 100;
+/// Idle wake-up of the service thread waiting for work.
+constexpr int kWorkerWaitMs = 500;
 /// Connections waiting for the service thread. A browser opens six at once; past
 /// this, answering 503 is cheaper than growing a queue nobody drains.
 constexpr size_t kMaxQueued = 8;
@@ -122,6 +126,17 @@ namespace {
 
 void serveOne(std::shared_ptr<HttpServer::State> st, int fd, const std::string& peer);
 
+/// Closes every accepted-but-unserved socket. Called by whoever is last: the accept
+/// loop on its way out (so a connection it queued after stop() is not leaked) and
+/// stop() itself (for a server whose accept thread never started). Both take the
+/// queue mutex, so a socket is only ever in one of the two.
+void drainQueue(HttpServer::State& st) {
+    std::lock_guard<std::mutex> lock(st.queueMutex);
+    for (int fd : st.queue) ::close(fd);
+    st.queue.clear();
+    st.queuePeers.clear();
+}
+
 void acceptLoop(std::shared_ptr<HttpServer::State> st) {
     while (st->running.load()) {
         pollfd p{};
@@ -156,6 +171,16 @@ void acceptLoop(std::shared_ptr<HttpServer::State> st) {
         }
         st->queueCv.notify_one();
     }
+
+    // This thread owns the listening socket: it is the only one that closes it.
+    // Closing it from stop() while this loop sits in poll()/accept() on that very
+    // fd frees the socket underneath a blocked call — the reason leaving the page
+    // killed the app right after "Tab QuickConfig: delete".
+    const int fd = st->listenFd;
+    st->listenFd = -1;
+    if (fd >= 0) ::close(fd);
+    drainQueue(*st);
+    brls::Logger::info("portal: listener closed");
 }
 
 void workerLoop(std::shared_ptr<HttpServer::State> st) {
@@ -164,7 +189,7 @@ void workerLoop(std::shared_ptr<HttpServer::State> st) {
         std::string peer;
         {
             std::unique_lock<std::mutex> lock(st->queueMutex);
-            st->queueCv.wait_for(lock, std::chrono::milliseconds(kAcceptPollMs),
+            st->queueCv.wait_for(lock, std::chrono::milliseconds(kWorkerWaitMs),
                 [&st] { return !st->queue.empty() || !st->running.load(); });
             if (st->queue.empty()) {
                 if (!st->running.load()) return;
@@ -311,11 +336,13 @@ bool HttpServer::start(int preferredPort, Handler handler, int* actualPort) {
         // constructor, so it is a "cannot start", not a crash.
         brls::Logger::error("portal: cannot start service threads: {}", ex.what());
         st->running.store(false);
-        if (st->listenFd >= 0) {
+        if (st->workerThread.joinable()) st->workerThread.detach();
+        if (st->acceptThread.joinable()) {
+            st->acceptThread.detach();  // it owns listenFd and closes it on the way out
+        } else if (st->listenFd >= 0) {
             ::close(st->listenFd);
             st->listenFd = -1;
         }
-        if (st->acceptThread.joinable()) st->acceptThread.detach();
         return false;
     }
     this->state = st;
@@ -331,27 +358,25 @@ void HttpServer::stop() {
 
     st->running.store(false);
     st->queueCv.notify_all();
-    if (st->listenFd >= 0) {
-        ::shutdown(st->listenFd, SHUT_RDWR);
-        ::close(st->listenFd);
-        st->listenFd = -1;
-    }
-    if (st->acceptThread.joinable()) st->acceptThread.join();
+    brls::Logger::info("portal: stopping");
 
-    // The service thread may be inside a handler that is waiting on the UI thread —
-    // which is exactly where stop() is called from (a page destructor). Joining it
-    // would freeze the console for the length of that wait, so it is detached: it
-    // holds its own shared_ptr to the state and exits on its next loop turn.
+    // Nothing here waits, and nothing here closes a socket that another thread is
+    // using. This runs from a page destructor, i.e. inside Application::frame():
+    //   - joining the accept loop means blocking the frame for a poll tick;
+    //   - closing the listening socket here is worse: the accept loop may be inside
+    //     poll()/accept() on that fd, and freeing it from under a blocked call is a
+    //     data abort, not an error code.
+    // So each thread releases what it owns (the accept loop closes the listener on
+    // its next tick) and both are detached. The shared_ptr keeps State alive until
+    // the last one is gone.
+    if (st->acceptThread.joinable()) st->acceptThread.detach();
     if (st->workerThread.joinable()) st->workerThread.detach();
+    brls::Logger::info("portal: threads released");
 
-    {
-        // Sockets the service thread will never reach: closing them from here is
-        // what unblocks a browser still waiting for a response.
-        std::lock_guard<std::mutex> lock(st->queueMutex);
-        for (int fd : st->queue) ::close(fd);
-        st->queue.clear();
-        st->queuePeers.clear();
-    }
+    // Sockets the service thread will never reach: closing them from here is what
+    // unblocks a browser still waiting for a response. The accept loop repeats this
+    // on its way out, for whatever it queued in the meantime.
+    drainQueue(*st);
     brls::Logger::info("portal: stopped");
 }
 

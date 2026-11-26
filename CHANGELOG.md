@@ -19,13 +19,21 @@
 
 ### Fixed
 
-- **B on the LAN config page offered to close the app instead of leaving the page.**
-  A button that nothing on the focus chain claims reaches `AppletFrame`, whose B is
-  `popContentView()` — with one activity on the stack, a "close the app?" dialog
-  followed by a quit. The page now claims B itself (`willAppear()`, i.e. after
-  `pushDetailView()` registered its own handler, since `registerAction` keys on the
-  button), and `AutoTabFrame` keeps a hidden handler that pops the open detail stack
-  wherever the focus happens to be — including on the sidebar.
+- **Leaving the LAN config page no longer kills the app.** The page's own B handler
+  ran and popped it (the log says `quick config: B, leaving the page` and the focus
+  went back to the settings row), and then the app died in `~QuickConfig`:
+  `HttpServer::stop()` closed the listening socket while the accept loop was inside
+  `poll()`/`accept()` on that very fd, and on libnx that frees the socket under a
+  blocked call. It also joined that thread, which blocks a frame. `stop()` now waits
+  for nothing: the accept loop owns the socket and closes it on its next tick, both
+  threads are detached, and the page destructor cannot let an exception escape.
+- **B on that page no longer offers to close the app.** A button that nothing on the
+  focus chain claims reaches `AppletFrame`, whose B is `popContentView()` — with one
+  activity on the stack, a "close the app?" dialog followed by a quit. The page now
+  claims B itself (`willAppear()`, i.e. after `pushDetailView()` registered its own
+  handler, since `registerAction` keys on the button), and `AutoTabFrame` keeps a
+  hidden handler that pops the open detail stack wherever the focus happens to be —
+  including on the sidebar.
 
 ## [0.2.0] — 2026-11-25
 
