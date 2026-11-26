@@ -41,6 +41,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "net/http_server.hpp"
 #include "utils/config_draft.hpp"
 
@@ -109,6 +111,21 @@ private:
     /// UI thread only: written by applyNow()/discard()/the marshalled draft calls,
     /// read by the page. Never touched from a request thread.
     draft::Draft draft_;
+
+    /// The `web/*` strings, resolved ONCE on the UI thread (`open()`). Built at
+    /// request time they would call brls::getStr from a worker, and getStr's
+    /// `currentLocale[pointer]` is a non-const operator[] — on a missing key it
+    /// INSERTS a node, i.e. it writes the global i18n table while the UI thread is
+    /// reading it. Copying a ready-made object from a request thread only reads.
+    nlohmann::json webStrings;
+    /// Same reason: the locale is read from the UI thread once, not from a request
+    /// thread per call.
+    std::string localeText;
+    /// The page and its script, read once in `open()`. A request then does no file
+    /// I/O at all: one less thing that can fail on a thread with no caller to catch
+    /// it, and a page load that costs a string copy.
+    std::string pageHtml;
+    std::string pageJs;
 };
 
 }  // namespace portal

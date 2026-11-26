@@ -10,7 +10,11 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
+#include <map>
+#include <mutex>
 #include <thread>
 
 #include <borealis.hpp>
@@ -19,13 +23,13 @@ namespace portal {
 
 namespace {
 
-/// Enough for a phone page load (HTML + a few fetches) and small enough that a
-/// hostile client cannot exhaust the console's thread table.
-constexpr int kMaxConnections = 4;
 constexpr int kRecvTimeoutSec = 5;
 constexpr int kSendTimeoutSec = 5;
 constexpr int kBacklog = 8;
 constexpr int kAcceptPollMs = 500;
+/// Connections waiting for the service thread. A browser opens six at once; past
+/// this, answering 503 is cheaper than growing a queue nobody drains.
+constexpr size_t kMaxQueued = 8;
 
 void setTimeouts(int fd) {
     timeval tv{};
@@ -100,9 +104,18 @@ struct HttpServer::State {
     int listenFd = -1;
     int port = 0;
     std::atomic<bool> running{false};
-    std::atomic<int> active{0};
     Handler handler;
+
+    /// Accepted sockets waiting for the service thread, with the peer address
+    /// remembered next to each: the queue is drained by another thread and
+    /// getpeername() after a close is useless.
+    std::deque<int> queue;
+    std::map<int, std::string> queuePeers;
+    std::mutex queueMutex;
+    std::condition_variable queueCv;
+
     std::thread acceptThread;
+    std::thread workerThread;
 };
 
 namespace {
@@ -126,107 +139,128 @@ void acceptLoop(std::shared_ptr<HttpServer::State> st) {
         char ip[INET_ADDRSTRLEN] = {0};
         ::inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
 
-        if (st->active.load() >= kMaxConnections) {
-            // Not a rate limit, an admission one: four in-flight requests are
-            // already more than one phone shows, and refusing is better than
-            // spawning threads until the console runs out.
+        bool full = false;
+        {
+            std::lock_guard<std::mutex> lock(st->queueMutex);
+            if (st->queue.size() >= kMaxQueued) {
+                full = true;
+            } else {
+                st->queue.push_back(cfd);
+                st->queuePeers[cfd] = ip;
+            }
+        }
+        if (full) {
             respondSimple(cfd, 503, "busy");
             ::close(cfd);
             continue;
         }
-        st->active.fetch_add(1);
-        // Detached on purpose: stop() must never join a handler that may be
-        // waiting on the UI thread (see the header).
-        std::thread(serveOne, st, cfd, std::string(ip)).detach();
+        st->queueCv.notify_one();
+    }
+}
+
+void workerLoop(std::shared_ptr<HttpServer::State> st) {
+    while (true) {
+        int fd = -1;
+        std::string peer;
+        {
+            std::unique_lock<std::mutex> lock(st->queueMutex);
+            st->queueCv.wait_for(lock, std::chrono::milliseconds(kAcceptPollMs),
+                [&st] { return !st->queue.empty() || !st->running.load(); });
+            if (st->queue.empty()) {
+                if (!st->running.load()) return;
+                continue;
+            }
+            fd = st->queue.front();
+            st->queue.pop_front();
+            auto it = st->queuePeers.find(fd);
+            if (it != st->queuePeers.end()) {
+                peer = it->second;
+                st->queuePeers.erase(it);
+            }
+        }
+        serveOne(st, fd, peer);
     }
 }
 
 void serveOne(std::shared_ptr<HttpServer::State> st, int fd, const std::string& peer) {
-    setTimeouts(fd);
-
-    std::string raw;
-    raw.reserve(2048);
-    size_t headEnd = std::string::npos;
-    char chunk[2048];
-
-    while (true) {
-        const ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
-        if (n <= 0) {  // closed, reset, or the receive budget expired
-            ::close(fd);
-            st->active.fetch_sub(1);
-            return;
-        }
-        raw.append(chunk, static_cast<size_t>(n));
-        headEnd = raw.find("\r\n\r\n");
-        if (headEnd != std::string::npos) break;
-        if (raw.size() > kMaxHeadBytes + 4) {
-            respondSimple(fd, 413, "head too large");
-            ::close(fd);
-            st->active.fetch_sub(1);
-            return;
-        }
-    }
-
-    Request req;
-    const ParseError err = parseHead(raw.substr(0, headEnd), req);
-    if (err != ParseError::Ok) {
-        const int status = err == ParseError::TooLarge || err == ParseError::TooManyHeaders ? 413
-                           : err == ParseError::Unsupported                              ? 405
-                                                                                         : 400;
-        respondSimple(fd, status, statusText(status));
-        ::close(fd);
-        st->active.fetch_sub(1);
-        return;
-    }
-    req.peer = peer;
-
-    const long cl = contentLength(req);
-    if (cl == -2) {
-        respondSimple(fd, 400, "bad content-length");
-        ::close(fd);
-        st->active.fetch_sub(1);
-        return;
-    }
-    if (cl == -3) {
-        respondSimple(fd, 413, "body too large");
-        ::close(fd);
-        st->active.fetch_sub(1);
-        return;
-    }
-    if (cl > 0) {
-        req.body = raw.substr(headEnd + 4);
-        // some of the body may already be in `raw`; ask only for the rest
-        while (req.body.size() < static_cast<size_t>(cl)) {
-            const ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
-            if (n <= 0) {
-                ::close(fd);
-                st->active.fetch_sub(1);
-                return;
-            }
-            req.body.append(chunk, static_cast<size_t>(n));
-        }
-        req.body.resize(static_cast<size_t>(cl));
-    }
-
-    Response resp;
+    // Every socket path is wrapped: an exception on this thread has no caller to
+    // catch it, and an uncaught one is a process death ("the software was closed
+    // because an error occurred") rather than a 500.
+    int status = -1;
     try {
-        if (!st->handler) {
-            resp.status = 503;
-        } else {
-            resp = st->handler(req);
-        }
+        status = [&]() -> int {
+            setTimeouts(fd);
+
+            std::string raw;
+            raw.reserve(2048);
+            size_t headEnd = std::string::npos;
+            char chunk[2048];
+
+            while (true) {
+                const ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
+                if (n <= 0) return -1;  // closed, reset, or the receive budget expired
+                raw.append(chunk, static_cast<size_t>(n));
+                headEnd = raw.find("\r\n\r\n");
+                if (headEnd != std::string::npos) break;
+                if (raw.size() > kMaxHeadBytes + 4) {
+                    respondSimple(fd, 413, "head too large");
+                    return 413;
+                }
+            }
+
+            Request req;
+            const ParseError err = parseHead(raw.substr(0, headEnd), req);
+            if (err != ParseError::Ok) {
+                const int code = err == ParseError::TooLarge || err == ParseError::TooManyHeaders ? 413
+                                 : err == ParseError::Unsupported                            ? 405
+                                                                                             : 400;
+                respondSimple(fd, code, statusText(code));
+                return code;
+            }
+            req.peer = peer;
+
+            const long cl = contentLength(req);
+            if (cl == -2) {
+                respondSimple(fd, 400, "bad content-length");
+                return 400;
+            }
+            if (cl == -3) {
+                respondSimple(fd, 413, "body too large");
+                return 413;
+            }
+            if (cl > 0) {
+                req.body = raw.substr(headEnd + 4);
+                while (req.body.size() < static_cast<size_t>(cl)) {
+                    const ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
+                    if (n <= 0) return -1;
+                    req.body.append(chunk, static_cast<size_t>(n));
+                }
+                req.body.resize(static_cast<size_t>(cl));
+            }
+
+            Response resp;
+            if (!st->handler) {
+                resp.status = 503;
+            } else {
+                resp = st->handler(req);
+            }
+            // One line per request: if a request kills the console, this names it.
+            brls::Logger::info("portal: {} {} -> {}", req.method, req.path, resp.status);
+            respond(fd, resp);
+            return resp.status;
+    }();
     } catch (const std::exception& ex) {
-        // A handler that throws must not leave the client hanging: answer 500
-        // and keep the message out of the body (it can name internal state).
-        brls::Logger::warning("portal: handler threw: {}", ex.what());
-        resp = Response{};
-        resp.status = 500;
-        resp.body = "{}";
+        // The comment above the lambda is not enough: without this the throw would
+        // unwind this thread with no handler and kill the process.
+        brls::Logger::error("portal: request from {} failed: {}", peer, ex.what());
+        respondSimple(fd, 500, "error");
+    } catch (...) {
+        brls::Logger::error("portal: request from {} failed", peer);
+        respondSimple(fd, 500, "error");
     }
 
-    respond(fd, resp);
+    if (status < 0) brls::Logger::info("portal: connection from {} closed without a request", peer);
     ::close(fd);
-    st->active.fetch_sub(1);
 }
 
 }  // namespace
@@ -265,8 +299,25 @@ bool HttpServer::start(int preferredPort, Handler handler, int* actualPort) {
         return false;
     }
 
+    // Both threads are created HERE, on the UI thread, before the page is shown.
+    // Nothing creates a thread from another thread later on — the rest of this app
+    // also creates its workers once, at startup.
     st->running.store(true);
-    st->acceptThread = std::thread(acceptLoop, st);
+    try {
+        st->acceptThread = std::thread(acceptLoop, st);
+        st->workerThread = std::thread(workerLoop, st);
+    } catch (const std::exception& ex) {
+        // thread creation can fail (EAGAIN); a throw here would escape the page's
+        // constructor, so it is a "cannot start", not a crash.
+        brls::Logger::error("portal: cannot start service threads: {}", ex.what());
+        st->running.store(false);
+        if (st->listenFd >= 0) {
+            ::close(st->listenFd);
+            st->listenFd = -1;
+        }
+        if (st->acceptThread.joinable()) st->acceptThread.detach();
+        return false;
+    }
     this->state = st;
     if (actualPort) *actualPort = st->port;
     brls::Logger::info("portal: listening on port {}", st->port);
@@ -279,6 +330,7 @@ void HttpServer::stop() {
     this->state.reset();
 
     st->running.store(false);
+    st->queueCv.notify_all();
     if (st->listenFd >= 0) {
         ::shutdown(st->listenFd, SHUT_RDWR);
         ::close(st->listenFd);
@@ -286,13 +338,21 @@ void HttpServer::stop() {
     }
     if (st->acceptThread.joinable()) st->acceptThread.join();
 
-    // Bounded and SHORT: stop() runs from the page's destructor, i.e. at the end of
-    // a frame, so a long wait here is a visibly frozen console. A login in flight
-    // can outlive this; it only ever touches globals (the portal singleton and
-    // AppConfig), never the page that asked for it.
-    for (int i = 0; i < 10 && st->active.load() > 0; ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    brls::Logger::info("portal: stopped ({} request thread(s) still finishing)", st->active.load());
+    // The service thread may be inside a handler that is waiting on the UI thread —
+    // which is exactly where stop() is called from (a page destructor). Joining it
+    // would freeze the console for the length of that wait, so it is detached: it
+    // holds its own shared_ptr to the state and exits on its next loop turn.
+    if (st->workerThread.joinable()) st->workerThread.detach();
+
+    {
+        // Sockets the service thread will never reach: closing them from here is
+        // what unblocks a browser still waiting for a response.
+        std::lock_guard<std::mutex> lock(st->queueMutex);
+        for (int fd : st->queue) ::close(fd);
+        st->queue.clear();
+        st->queuePeers.clear();
+    }
+    brls::Logger::info("portal: stopped");
 }
 
 bool HttpServer::running() const { return this->state && this->state->running.load(); }

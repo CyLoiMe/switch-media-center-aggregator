@@ -163,17 +163,20 @@ nlohmann::json stringsJson() {
     return out;
 }
 
-Response staticFile(const std::string& name, const char* contentType) {
-    std::ifstream in("romfs:/web/" + name, std::ios::binary);
-    if (!in) {
-        brls::Logger::warning("portal: romfs:/web/{} is missing", name);
-        return errorJson(404, "missing");
+/// One file out of romfs, or "" when it is not there.
+///
+/// `romfs::get()` is the compiled-in resource map borealis itself uses for i18n —
+/// it needs no devoptab. The stream path is kept as a fallback for a build where
+/// the map does not carry the web assets. `get()` throws on a missing path
+/// (libromfs maps it to std::invalid_argument), so both branches are guarded.
+std::string readAsset(const std::string& path) {
+    try {
+        return romfs::get(path).string();
+    } catch (...) {
     }
-    Response r;
-    r.status = 200;
-    r.contentType = contentType;
-    r.body.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    return r;
+    std::ifstream in("romfs:/" + path, std::ios::binary);
+    if (!in) return {};
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 nlohmann::json connectionJson(const draft::Connection& c) {
@@ -245,6 +248,14 @@ bool Portal::open() {
         this->failures_ = 0;
     }
     this->draft_.clear();  // UI thread: open() comes from the page's constructor
+    this->webStrings = stringsJson();
+    this->localeText = brls::Application::getLocale();
+    this->pageHtml = readAsset("web/index.html");
+    this->pageJs = readAsset("web/app.js");
+    brls::Logger::info("portal: page {} bytes, script {} bytes", this->pageHtml.size(), this->pageJs.size());
+    // One line that proves the strings loaded at all: if the page shows keys
+    // instead of words, this is where to look.
+    brls::Logger::info("portal: i18n web/title=\"{}\"", brls::getStr("web/title"));
 
     int port = 0;
     if (!this->server_.start(8080, [this](const Request& req) { return this->handle(req); }, &port))
@@ -430,9 +441,22 @@ Response Portal::handle(const Request& req) {
 
     // Static page. Cheap, unauthenticated by design: it contains no data.
     if (req.method == "GET") {
-        if (req.path == "/" || req.path == "/index.html")
-            return staticFile("index.html", "text/html; charset=utf-8");
-        if (req.path == "/app.js") return staticFile("app.js", "text/javascript; charset=utf-8");
+        if (req.path == "/" || req.path == "/index.html") {
+            if (this->pageHtml.empty()) return errorJson(500, "page missing");
+            Response r;
+            r.status = 200;
+            r.contentType = "text/html; charset=utf-8";
+            r.body = this->pageHtml;
+            return r;
+        }
+        if (req.path == "/app.js") {
+            if (this->pageJs.empty()) return errorJson(500, "script missing");
+            Response r;
+            r.status = 200;
+            r.contentType = "text/javascript; charset=utf-8";
+            r.body = this->pageJs;
+            return r;
+        }
     }
 
     // Everything the login screen needs, and nothing else: no connection names, no
@@ -442,18 +466,18 @@ Response Portal::handle(const Request& req) {
             const Phase p = this->phase();
             return jsonResponse(200,
                 nlohmann::json{{"phase", p == Phase::Armed ? "armed" : p == Phase::Paused ? "paused" : "idle"},
-                    {"locale", brls::Application::getLocale()},
-                    {"strings", stringsJson()},
+                    {"locale", this->localeText},
+                    {"strings", this->webStrings},
                     {"need", "pin"}});
         }
         auto out = std::make_shared<std::string>();
         if (!runOnUi([this, out]() {
                 nlohmann::json j;
                 j["phase"] = "claimed";
-                j["locale"] = brls::Application::getLocale();
+                j["locale"] = this->localeText;
                 j["url"] = this->url();
                 j["version"] = AppVersion::getVersion();
-                j["strings"] = stringsJson();
+                j["strings"] = this->webStrings;
 
                 // getItem() is non-const (it may create the entry), and it is the
                 // only way to read a stored string, so this is a mutable reference.
