@@ -11,6 +11,8 @@
 #include <thread>
 
 #include <borealis.hpp>
+// view.hpp is what pulls in <romfs/romfs.hpp>; <borealis.hpp> alone does not.
+#include <borealis/core/view.hpp>
 #include <nlohmann/json.hpp>
 
 #include "api/http.hpp"
