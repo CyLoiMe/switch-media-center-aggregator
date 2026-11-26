@@ -66,6 +66,20 @@ void QuickConfig::draw(NVGcontext* vg, float x, float y, float width, float heig
 }
 
 void QuickConfig::primary() {
+    try {
+        this->primaryImpl();
+    } catch (const std::exception& ex) {
+        // The message goes to the log, not to the screen: it is English runtime
+        // text (bad_alloc, a device error) and the page is localised.
+        brls::Logger::error("quick config: A failed: {}", ex.what());
+        this->labelStatus->setText("web/failed"_i18n);
+    } catch (...) {
+        brls::Logger::error("quick config: A failed");
+        this->labelStatus->setText("web/failed"_i18n);
+    }
+}
+
+void QuickConfig::primaryImpl() {
     auto& p = portal::Portal::instance();
     if (p.phase() == portal::Phase::Claimed) {
         if (p.changes().empty()) {
@@ -92,6 +106,16 @@ void QuickConfig::primary() {
 }
 
 void QuickConfig::secondary() {
+    try {
+        this->secondaryImpl();
+    } catch (const std::exception& ex) {
+        brls::Logger::error("quick config: X failed: {}", ex.what());
+    } catch (...) {
+        brls::Logger::error("quick config: X failed");
+    }
+}
+
+void QuickConfig::secondaryImpl() {
     auto& p = portal::Portal::instance();
     if (p.phase() == portal::Phase::Claimed) {
         p.disconnect();  // also drops the draft: the device is gone, so is its work
@@ -105,6 +129,20 @@ void QuickConfig::secondary() {
 }
 
 void QuickConfig::refresh() {
+    try {
+        this->refreshImpl();
+    } catch (const std::exception& ex) {
+        if (this->warned) return;
+        this->warned = true;
+        brls::Logger::error("quick config: refresh failed: {}", ex.what());
+    } catch (...) {
+        if (this->warned) return;
+        this->warned = true;
+        brls::Logger::error("quick config: refresh failed");
+    }
+}
+
+void QuickConfig::refreshImpl() {
     auto& p = portal::Portal::instance();
     const portal::Phase phase = p.phase();
     const std::string pin = p.pin();

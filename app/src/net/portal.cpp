@@ -1,5 +1,6 @@
 #include "net/portal.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -32,19 +33,46 @@ constexpr int kIdleSeconds = 300;
 /// write, short enough that a hung UI does not hold the socket open.
 constexpr int kUiTimeoutMs = 5000;
 
-std::mt19937_64& rng() {
-    // std::random_device is not guaranteed to be a real entropy source on a
-    // freestanding target, so it is mixed with the clock and a stack address.
-    // (libnx exposes csrng as randomGet(); if the portlibs' header is available at
-    // the next dependency bump, prefer it here.)
-    static std::mt19937_64 engine([] {
+/// Seed material that cannot fail.
+///
+/// libstdc++ implements `std::random_device` on top of a real entropy device
+/// (`/dev/urandom`), and on a console there may be none: the CONSTRUCTOR then
+/// throws. This used to run inside the first call to rng() — i.e. inside the A
+/// handler that mints a PIN — so the exception escaped a borealis action listener
+/// and terminated the app: "the software was closed because an error occurred" on
+/// the first A press, before a single digit existed.
+///
+/// The clocks, a stack address and a counter always exist, so they are the base;
+/// random_device is mixed in only when it actually works.
+uint64_t seedEntropy() {
+    static std::atomic<uint64_t> counter{0};
+    int probe = 0;
+    uint64_t seed = static_cast<uint64_t>(
+        std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    seed ^= static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()) << 21;
+    seed ^= static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&probe)) << 7;
+    seed ^= counter.fetch_add(1, std::memory_order_relaxed) * 0x9E3779B97F4A7C15ull;
+    try {
         std::random_device rd;
-        uint64_t seed = static_cast<uint64_t>(rd());
-        seed ^= static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-        int probe = 0;
-        seed ^= static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&probe));
-        return seed;
-    }());
+        seed ^= static_cast<uint64_t>(rd()) << 32;
+        seed ^= static_cast<uint64_t>(rd());
+    } catch (...) {
+        // No entropy device here: the mix above is the whole seed. A code that
+        // lives five minutes and dies after five wrong attempts does not need
+        // more than that.
+    }
+    // splitmix64 finaliser: the low bits of a nanosecond clock are predictable,
+    // the bits after this are not usefully guessable from outside.
+    seed += 0x9E3779B97F4A7C15ull;
+    seed = (seed ^ (seed >> 30)) * 0xBF58476D1CE4E5B9ull;
+    seed = (seed ^ (seed >> 27)) * 0x94D049BB133111EBull;
+    return seed ^ (seed >> 31);
+}
+
+std::mt19937_64& rng() {
+    // Constructed once, on the first PIN: seedEntropy() must not throw (it does
+    // not), because a throw here is a throw inside an action listener.
+    static std::mt19937_64 engine(seedEntropy());
     return engine;
 }
 
@@ -287,6 +315,7 @@ int Portal::attemptsLeft() {
 void Portal::arm() {
     // A new PIN invalidates the old one, and any session it produced: re-arming is
     // exactly "I am starting over".
+    brls::Logger::info("portal: arming");
     {
         std::lock_guard<std::mutex> lock(this->mutex);
         this->pin_ = randomDigits(6);

@@ -38,9 +38,17 @@ public:
     static brls::View* create();
 
 private:
+    /// Thin wrappers: an exception escaping an action listener or draw() reaches
+    /// std::terminate, i.e. "the software was closed because an error occurred".
+    /// A page that can fail must fail into its own status line instead.
     void refresh();
     void primary();    ///< A: arm / apply
     void secondary();  ///< X: disconnect (claimed) or discard the draft
+
+    void refreshImpl();
+    void primaryImpl();
+    void secondaryImpl();
+    bool warned = false;  ///< one log line per page, not one per frame
 
     BRLS_BIND(brls::Label, labelUrl, "qc/url");
     BRLS_BIND(brls::Label, labelPin, "qc/pin");
