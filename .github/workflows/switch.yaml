@@ -44,6 +44,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
+      with:
+        # the tests include nlohmann from borealis' tree (it lives in the submodule)
+        submodules: recursive
     - name: Run logic tests
       run: |
         set +e
