@@ -11,8 +11,6 @@
 #include <thread>
 
 #include <borealis.hpp>
-// view.hpp is what pulls in <romfs/romfs.hpp>; <borealis.hpp> alone does not.
-#include <borealis/core/view.hpp>
 #include <nlohmann/json.hpp>
 
 #include "api/http.hpp"
@@ -165,19 +163,22 @@ nlohmann::json stringsJson() {
     return out;
 }
 
-/// One file out of romfs, or "" when it is not there.
+/// One file out of the NRO's romfs, or "" when it is not there.
 ///
-/// `romfs::get()` is the compiled-in resource map borealis itself uses for i18n —
-/// it needs no devoptab. The stream path is kept as a fallback for a build where
-/// the map does not carry the web assets. `get()` throws on a missing path
-/// (libromfs maps it to std::invalid_argument), so both branches are guarded.
+/// `romfs:/` is libnx's own devoptab for the image elf2nro packs
+/// (`--romfsdir=…`), which the console mounts at startup; this is the same
+/// mechanism the rest of the homebrew world reads text files with. The libromfs
+/// resource map (`romfs::get`) is not usable from here: it is guarded by
+/// `USE_LIBROMFS`, which is defined for borealis' own translation units only.
+///
+/// Returns "" instead of throwing: a missing page must be a 500 the page can show,
+/// not an exception on a thread with no caller.
 std::string readAsset(const std::string& path) {
-    try {
-        return romfs::get(path).string();
-    } catch (...) {
-    }
     std::ifstream in("romfs:/" + path, std::ios::binary);
-    if (!in) return {};
+    if (!in) {
+        brls::Logger::warning("portal: romfs:/{} is missing", path);
+        return {};
+    }
     return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
