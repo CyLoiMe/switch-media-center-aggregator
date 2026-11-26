@@ -219,6 +219,17 @@
     "empty_sub": "Las películas y episodios descargados aparecen aquí para verlos sin conexión."
   },
   "setting": {
+    "quick_config": {
+      "header": "Configuración rápida",
+      "hint_idle": "Pulsa A para mostrar un código.",
+      "hint_armed": "Abre la dirección en el móvil o PC e introduce el código.",
+      "hint_claimed": "Conectado:",
+      "hint_paused": "PIN invalidado. Pulsa A para uno nuevo.",
+      "pending_title": "Pendiente",
+      "pending_none": "Sin cambios",
+      "no_listen": "Los puertos 8080–8082 están ocupados.",
+      "no_ip": "La consola no está en red."
+    },
     "quit_hint": "Vas a salir de la aplicación. La configuración tendrá efecto tras el próximo arranque",
     "name": "Nombre",
     "version": "Versión",

@@ -18,6 +18,14 @@
             paddingTop="@style/main/content_padding_top_bottom"
             paddingBottom="@style/main/content_padding_top_bottom">
 
+            <!-- First row on purpose: it is the escape hatch for every other
+                 field on this page, and the page you cannot reach with a stick is
+                 the one you need the phone for. -->
+            <DisclosureCell
+                title="@i18n/main/setting/quick_config/header"
+                id="setting/quick_config"
+                marginBottom="16px" />
+
             <DisclosureCell
                 title="@i18n/main/setting/libraries/header"
                 id="setting/libraries"

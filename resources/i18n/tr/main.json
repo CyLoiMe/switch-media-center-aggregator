@@ -219,6 +219,17 @@
     "empty_sub": "İndirilen filmler ve bölümler çevrimdışı izlemek için burada görünür."
   },
   "setting": {
+    "quick_config": {
+      "header": "Hızlı yapılandırma",
+      "hint_idle": "Kod göstermek için A'ya basın.",
+      "hint_armed": "Adresi telefonda veya bilgisayarda açıp kodu girin.",
+      "hint_claimed": "Bağlı:",
+      "hint_paused": "PIN geçersiz. Yeni kod için A'ya basın.",
+      "pending_title": "Beklemede",
+      "pending_none": "Değişiklik yok",
+      "no_listen": "8080–8082 portları dolu.",
+      "no_ip": "Konsol ağda değil."
+    },
     "quit_hint": "Uygulamadan çıkış yapmak üzeresiniz. Değiştirilen ayarlar bir sonraki başlangıçtan sonra uygulanacak",
     "name": "Ad",
     "version": "Sürüm",

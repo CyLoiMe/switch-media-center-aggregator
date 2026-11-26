@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SMCA</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px 16px 96px;
+    font: 16px/1.45 -apple-system, "Segoe UI", "Noto Sans", "PingFang SC", sans-serif;
+    background: #f6f6f7; color: #16181d;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #15171b; color: #e9ebef; }
+    input, select, button { background: #1e2127; color: #e9ebef; border-color: #333a44; }
+    .card { background: #1b1e23; border-color: #2a2f37; }
+    .muted { color: #98a2b3; }
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { color: #6b7280; font-size: 14px; }
+  .card {
+    background: #fff; border: 1px solid #e3e6ea; border-radius: 12px;
+    padding: 14px; margin: 12px 0;
+  }
+  label { display: block; font-size: 13px; margin: 10px 0 4px; color: inherit; opacity: .8; }
+  input, select {
+    width: 100%; padding: 10px 12px; font-size: 16px;
+    border: 1px solid #d4d8de; border-radius: 10px; background: #fff;
+  }
+  button {
+    padding: 10px 16px; font-size: 16px; border-radius: 10px;
+    border: 1px solid #d4d8de; background: #fff; margin-top: 10px;
+  }
+  button.primary { background: #2f6feb; border-color: #2f6feb; color: #fff; }
+  button.danger { color: #c0392b; border-color: #e5b4ae; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0 0 auto; margin-top: 0; }
+  #pinScreen { max-width: 380px; margin: 12vh auto 0; text-align: center; }
+  #pin { font-size: 32px; letter-spacing: 12px; text-align: center; }
+  .err { color: #c0392b; font-size: 14px; min-height: 20px; margin-top: 8px; }
+  .pinItem { font-size: 14px; padding: 2px 0; }
+  #bar {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px;
+    background: rgba(127,127,127,.12); backdrop-filter: blur(8px);
+    display: flex; gap: 8px; align-items: center;
+  }
+  #bar .grow { flex: 1; font-size: 14px; }
+  .hidden { display: none !important; }
+  .conn { border-top: 1px solid #e3e6ea33; padding-top: 10px; margin-top: 10px; }
+  .conn:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+</style>
+</head>
+<body>
+
+<!-- PIN screen: the only thing reachable without a session -->
+<div id="pinScreen" class="hidden">
+  <h1 data-k="title"></h1>
+  <p class="muted" data-k="pin_hint"></p>
+  <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*">
+  <div class="err" id="pinErr"></div>
+  <button class="primary" id="pinGo" data-k="pin_submit"></button>
+</div>
+
+<!-- Editor -->
+<div id="editor" class="hidden">
+  <h1 data-k="title"></h1>
+  <p class="muted" id="who"></p>
+
+  <div class="card">
+    <label data-k="ua_label"></label>
+    <input id="ua" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button data-save="ua" data-k="conn_save"></button>
+    <p class="muted" data-k="ua_hint"></p>
+  </div>
+
+  <div class="card">
+    <label data-k="proxy_label"></label>
+    <input id="proxy" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button data-save="proxy" data-k="conn_save"></button>
+  </div>
+
+  <div class="card">
+    <label data-k="conn_title"></label>
+    <div id="conns"></div>
+  </div>
+
+  <div class="card">
+    <label data-k="conn_add"></label>
+    <div class="row">
+      <select id="newType">
+        <option value="jellyfin">Jellyfin</option>
+        <option value="emby">Emby</option>
+      </select>
+    </div>
+    <label data-k="conn_addr"></label>
+    <input id="newUrl" placeholder="192.168.3.10:8096" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label data-k="conn_lan"></label>
+    <input id="newLan" placeholder="" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label data-k="conn_name"></label>
+    <input id="newName" autocapitalize="off" autocorrect="off">
+    <label data-k="conn_user"></label>
+    <input id="newUser" autocapitalize="off" autocorrect="off">
+    <label data-k="conn_password"></label>
+    <input id="newPass" type="password">
+    <div class="err" id="addErr"></div>
+    <button class="primary" id="addGo" data-k="conn_add"></button>
+  </div>
+</div>
+
+<div id="bar" class="hidden">
+  <div class="grow" id="pending"></div>
+  <button id="discard" data-k="discard"></button>
+  <button class="primary" id="apply" data-k="apply"></button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

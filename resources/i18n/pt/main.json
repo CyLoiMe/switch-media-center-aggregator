@@ -219,6 +219,17 @@
     "empty_sub": "Os filmes e episódios transferidos ficam aqui, prontos para ver offline."
   },
   "setting": {
+    "quick_config": {
+      "header": "Configuração rápida",
+      "hint_idle": "Prima A para mostrar um código.",
+      "hint_armed": "Abra o endereço no telemóvel ou PC e introduza o código.",
+      "hint_claimed": "Ligado:",
+      "hint_paused": "PIN invalidado. Prima A para um novo.",
+      "pending_title": "Pendente",
+      "pending_none": "Sem alterações",
+      "no_listen": "As portas 8080–8082 estão ocupadas.",
+      "no_ip": "A consola não está na rede."
+    },
     "quit_hint": "Está prestes a sair da aplicação. As definições entram em vigor após o próximo arranque",
     "name": "Nome",
     "version": "Versão",

@@ -25,6 +25,7 @@
 #include "view/mpv_core.hpp"
 #include "view/selector_cell.hpp"
 #include "view/library_manager.hpp"
+#include "tab/quick_config.hpp"
 #include "api/plex.hpp"
 #include "api/media/langs.hpp"
 #include "utils/dialog.hpp"
@@ -448,6 +449,14 @@ void SettingTab::onCreate() {
         brls::Dialog* dialog = new brls::Dialog(new SettingAbout());
         dialog->addButton("hints/ok"_i18n, []() {});
         dialog->open();
+        return true;
+    });
+
+    // The LAN portal: the only place in the app where a phone can do the typing.
+    // Its page owns the listener's lifetime (quick_config.cpp), so leaving the page
+    // is always "stopped", never "paused in the background".
+    btnQuickConfig->registerClickAction([](brls::View* view) -> bool {
+        ui::presentDetail(view, new QuickConfig());
         return true;
     });
 

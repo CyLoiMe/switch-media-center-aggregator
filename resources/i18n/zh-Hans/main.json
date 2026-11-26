@@ -219,6 +219,17 @@
     "empty_sub": "下载的电影和剧集会显示在这里，可离线观看。"
   },
   "setting": {
+    "quick_config": {
+      "header": "快捷配置",
+      "hint_idle": "按 A 生成配对码。",
+      "hint_armed": "在手机或电脑上打开上面的地址，输入配对码。",
+      "hint_claimed": "已连接：",
+      "hint_paused": "配对码已失效，按 A 重新生成。",
+      "pending_title": "待应用",
+      "pending_none": "没有待应用的更改",
+      "no_listen": "端口 8080–8082 都被占用。",
+      "no_ip": "主机未连接网络。"
+    },
     "quit_hint": "即将退出应用, 设置内容将在下次启动后生效",
     "name": "名称",
     "version": "版本",

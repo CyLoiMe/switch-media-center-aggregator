@@ -39,6 +39,10 @@ struct Request {
     std::string query;  ///< everything after '?', empty when absent
     std::string body;
     std::vector<std::pair<std::string, std::string>> headers;  ///< names lower-cased
+    /// Filled by the server, never by the parser: the client address, formatted
+    /// for display ("192.168.3.42"). The portal shows it so the person at the
+    /// console can tell whether the device claiming the session is theirs.
+    std::string peer;
 
     /// Header value by name (case-insensitive), empty when absent.
     std::string header(const std::string& name) const {

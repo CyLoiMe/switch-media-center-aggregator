@@ -44,8 +44,8 @@ int main() {
         CHECK(r.query == "x=1&y=2");
     }
     {
-        // LF alone is tolerated: the tests and a few tiny clients send it
-        Request r = parse("DELETE /api/draft/connection/abc\n");
+        // LF alone is tolerated as a line ending (the version is still required)
+        Request r = parse("DELETE /api/draft/connection/abc HTTP/1.1\n");
         CHECK(r.method == "DELETE");
         CHECK(r.path == "/api/draft/connection/abc");
     }

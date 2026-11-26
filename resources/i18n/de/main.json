@@ -219,6 +219,17 @@
     "empty_sub": "Heruntergeladene Filme und Episoden erscheinen hier, offline abspielbar."
   },
   "setting": {
+    "quick_config": {
+      "header": "Schnellkonfiguration",
+      "hint_idle": "A drücken, um einen Code anzuzeigen.",
+      "hint_armed": "Adresse am Telefon/PC öffnen und den Code eingeben.",
+      "hint_claimed": "Verbunden:",
+      "hint_paused": "PIN ungültig. A für einen neuen Code.",
+      "pending_title": "Ausstehend",
+      "pending_none": "Keine Änderungen",
+      "no_listen": "Ports 8080–8082 sind belegt.",
+      "no_ip": "Konsole ist nicht im Netzwerk."
+    },
     "quit_hint": "Du bist dabei, die Applikation zu beenden. Die Einstellungen treten beim nächsten Start in Kraft.",
     "name": "Name",
     "version": "Version",

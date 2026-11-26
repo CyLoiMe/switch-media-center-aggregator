@@ -232,6 +232,17 @@
     "empty_sub": "Downloaded movies and episodes end up here, ready to watch offline."
   },
   "setting": {
+    "quick_config": {
+      "header": "Quick config",
+      "hint_idle": "Press A to show a setup code.",
+      "hint_armed": "Open the address on your phone or PC, then enter the code.",
+      "hint_claimed": "Connected:",
+      "hint_paused": "PIN invalidated. Press A for a new one.",
+      "pending_title": "Pending",
+      "pending_none": "No changes",
+      "no_listen": "Ports 8080–8082 are all in use.",
+      "no_ip": "The console is not on a network."
+    },
     "quit_hint": "You are about to exit the application. The settings will take effect after the next startup",
     "name": "Name",
     "version": "Version",

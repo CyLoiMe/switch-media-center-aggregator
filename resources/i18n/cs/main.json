@@ -219,6 +219,17 @@
     "empty_sub": "Stažené filmy a epizody se zobrazí zde, připravené ke sledování offline."
   },
   "setting": {
+    "quick_config": {
+      "header": "Rychlé nastavení",
+      "hint_idle": "Stiskněte A pro zobrazení kódu.",
+      "hint_armed": "Otevřete adresu na telefonu nebo PC a zadejte kód.",
+      "hint_claimed": "Připojeno:",
+      "hint_paused": "PIN zneplatněn. Stiskněte A pro nový.",
+      "pending_title": "Čeká na použití",
+      "pending_none": "Žádné změny",
+      "no_listen": "Porty 8080–8082 jsou obsazené.",
+      "no_ip": "Konzole není v síti."
+    },
     "quit_hint": "Chystáte se ukončit aplikaci. Nastavení se projeví po příštím spuštění",
     "name": "Jméno",
     "version": "Verze",

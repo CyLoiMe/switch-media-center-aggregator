@@ -25,22 +25,33 @@
 
 namespace draft {
 
-/// One connection as the page sees it. `id` empty = a connection to create;
-/// `removal` marks a delete. Both carry `user_id` so the profile can be found
-/// even when a re-login is about to change the server id.
+/// One connection as the page sees it.
+///
+/// A login can change both ids (a restored server issues a new server Id, a
+/// recreated account a new user Id), so an entry has two identities: `id`/`user_id`
+/// are what the server just returned, `from_id`/`from_user_id` are the entry being
+/// replaced. Apply needs the old pair for AppConfig::updateConnection() and the new
+/// pair for the value it writes. Creating leaves `from_*` empty.
 struct Connection {
-    std::string id;       ///< AppServer::id, empty for a new one
-    std::string user_id;  ///< AppUser::id, empty for a new one
+    std::string from_id;       ///< AppServer::id being edited/removed, empty when creating
+    std::string from_user_id;  ///< AppUser::id being edited/removed, empty when creating
+    std::string id;            ///< AppServer::id (as resolved by the login)
+    std::string user_id;       ///< AppUser::id
     std::string type = "jellyfin";  ///< jellyfin | emby (Plex is console-only)
-    std::string name;     ///< display name; falls back to the host
-    std::string url;      ///< remote address
-    std::string local_url;///< optional LAN address
-    std::string token;    ///< filled by a successful login, never by the page
+    std::string name;          ///< display name; falls back to the host
+    std::string url;           ///< remote address
+    std::string local_url;     ///< optional LAN address
+    std::string token;         ///< filled by a successful login, never by the page
     std::string user_name;
+    std::string image_tag;     ///< avatar tag, for the tile
     bool can_download = true;
     bool removal = false;
 
     bool needsLogin() const { return this->token.empty(); }
+    /// The identity of this ROW. Keyed on the profile, not the server: one server
+    /// can hold two accounts (a shared AppServer, two AppUsers), and those are two
+    /// different rows the page must be able to edit and delete independently.
+    const std::string& key() const { return this->from_user_id.empty() ? this->user_id : this->from_user_id; }
 };
 
 enum class Kind {
@@ -133,12 +144,17 @@ public:
         this->connections.clear();
     }
 
-    /// Create-or-replace by (id) when editing, or append when creating. Callers
-    /// are the page's own handlers, so there is no "duplicate id" case to guard:
-    /// an edit carries the id it was loaded with.
+    /// Create-or-replace. Keyed on the entry being replaced (`from_id`), so an
+    /// edit whose re-login produced new ids still replaces the right row instead
+    /// of appending a second one.
     void upsert(Connection c) {
+        const std::string key = c.key();
+        if (key.empty()) {
+            this->connections.push_back(std::move(c));
+            return;
+        }
         for (auto& existing : this->connections) {
-            if (!c.id.empty() && existing.id == c.id) {
+            if (existing.key() == key) {
                 existing = std::move(c);
                 return;
             }
@@ -148,10 +164,13 @@ public:
 
     /// Marks an existing connection for deletion; a connection that only existed
     /// in the draft is simply dropped (nothing was ever applied).
-    bool remove(const std::string& id) {
+    bool remove(const std::string& key) {
         for (auto it = this->connections.begin(); it != this->connections.end(); ++it) {
-            if (it->id != id) continue;
-            if (it->user_id.empty()) {
+            if (it->key() != key) continue;
+            // `from_user_id` is what makes the row exist in config.json. Without
+            // it the entry was only ever a draft, so deleting it must not turn
+            // into a removeUser() call on a profile that was never written.
+            if (it->from_user_id.empty()) {
                 this->connections.erase(it);
             } else {
                 it->removal = true;
@@ -161,9 +180,16 @@ public:
         return false;
     }
 
-    const Connection* find(const std::string& id) const {
+    const Connection* find(const std::string& key) const {
         for (const auto& c : this->connections)
-            if (c.id == id) return &c;
+            if (c.key() == key) return &c;
+        return nullptr;
+    }
+
+    /// Mutable lookup for the portal's edit path (name / LAN address / type).
+    Connection* find(const std::string& key) {
+        for (auto& c : this->connections)
+            if (c.key() == key) return &c;
         return nullptr;
     }
 
@@ -176,8 +202,8 @@ public:
         for (const auto& c : this->connections) {
             if (c.removal)
                 out.push_back({Kind::Remove, c.name});
-            else if (c.id.empty())
-                out.push_back({Kind::Add, c.name});
+            else if (c.from_id.empty())
+                out.push_back({Kind::Add, c.name});   // nothing to replace: this is new
             else
                 out.push_back({Kind::Edit, c.name});
         }

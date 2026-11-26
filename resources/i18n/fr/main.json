@@ -232,6 +232,17 @@
     "empty_sub": "Les films et épisodes téléchargés se retrouvent ici, pour les regarder hors ligne."
   },
   "setting": {
+    "quick_config": {
+      "header": "Configuration rapide",
+      "hint_idle": "Appuyez sur A pour afficher un code.",
+      "hint_armed": "Ouvrez l'adresse sur votre téléphone ou PC, puis saisissez le code.",
+      "hint_claimed": "Connecté :",
+      "hint_paused": "Code invalidé. Appuyez sur A pour en obtenir un autre.",
+      "pending_title": "En attente",
+      "pending_none": "Aucune modification",
+      "no_listen": "Les ports 8080–8082 sont occupés.",
+      "no_ip": "La console n'est pas sur un réseau."
+    },
     "quit_hint": "L'application va bientôt se fermer, les paramètres prendront effet lors du prochain démarrage",
     "name": "Nom",
     "version": "Version",

@@ -1,0 +1,57 @@
+<brls:Box
+    width="auto"
+    height="auto">
+
+    <brls:ScrollingFrame
+        width="auto"
+        height="auto"
+        marginTop="10"
+        grow="1.0">
+
+        <brls:Box
+            width="auto"
+            height="auto"
+            axis="column"
+            alignItems="stretch"
+            paddingLeft="@style/main/content_padding_sides"
+            paddingRight="@style/main/content_padding_sides"
+            paddingTop="@style/main/content_padding_top_bottom"
+            paddingBottom="@style/main/content_padding_top_bottom">
+
+            <brls:Header
+                width="auto"
+                height="auto"
+                title="@i18n/main/setting/quick_config/header"
+                marginBottom="10" />
+
+            <brls:Label
+                id="qc/hint"
+                fontSize="18" />
+
+            <!-- the address to type on the phone: big, because it is read from a
+                 sofa; the PIN under it is bigger still, because it is copied -->
+            <brls:Label
+                id="qc/url"
+                fontSize="28"
+                marginTop="24" />
+
+            <brls:Label
+                id="qc/pin"
+                fontSize="64"
+                marginTop="12" />
+
+            <brls:Label
+                id="qc/status"
+                fontSize="16"
+                textColor="@theme/font/grey"
+                marginTop="24" />
+
+            <brls:Label
+                id="qc/pending"
+                fontSize="16"
+                textColor="@theme/font/grey"
+                marginTop="12" />
+
+        </brls:Box>
+    </brls:ScrollingFrame>
+</brls:Box>

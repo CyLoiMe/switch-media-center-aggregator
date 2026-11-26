@@ -219,6 +219,17 @@
     "empty_sub": "다운로드한 영화와 에피소드가 여기에 표시되어 오프라인으로 시청할 수 있습니다."
   },
   "setting": {
+    "quick_config": {
+      "header": "빠른 설정",
+      "hint_idle": "A를 눌러 설정 코드를 표시합니다.",
+      "hint_armed": "휴대폰이나 PC에서 주소를 열고 코드를 입력하세요.",
+      "hint_claimed": "연결됨:",
+      "hint_paused": "PIN이 무효입니다. A를 눌러 새로 발급하세요.",
+      "pending_title": "적용 대기",
+      "pending_none": "변경 없음",
+      "no_listen": "포트 8080–8082이 모두 사용 중입니다.",
+      "no_ip": "본체가 네트워크에 연결되어 있지 않습니다."
+    },
     "quit_hint": "앱을 종료합니다. 설정 내용은 다음 실행 시 적용됩니다.",
     "name": "이름",
     "version": "버전",

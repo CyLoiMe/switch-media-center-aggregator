@@ -219,6 +219,17 @@
     "empty_sub": "下載的電影和劇集會顯示在這裡，可離線觀看。"
   },
   "setting": {
+    "quick_config": {
+      "header": "快速設定",
+      "hint_idle": "按 A 產生配對碼。",
+      "hint_armed": "在手機或電腦上開啟上面的位址，輸入配對碼。",
+      "hint_claimed": "已連接：",
+      "hint_paused": "配對碼已失效，按 A 重新產生。",
+      "pending_title": "待套用",
+      "pending_none": "沒有待套用的變更",
+      "no_listen": "埠 8080–8082 都被佔用。",
+      "no_ip": "主機未連線網路。"
+    },
     "quit_hint": "即將退出本程式，變更的設定將在下次啟動時生效",
     "name": "名稱",
     "version": "版本",

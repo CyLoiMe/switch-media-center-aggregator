@@ -72,7 +72,11 @@ int main() {
         added.token = "t";
         d.upsert(added);
 
+        // an edit carries both identities: the row it replaces and the ids the
+        // re-login just returned (they may differ — restored server, new account)
         draft::Connection edited;
+        edited.from_id = "srv-1";
+        edited.from_user_id = "user-1";
         edited.id = "srv-1";
         edited.user_id = "user-1";
         edited.name = "旧 NAS";
@@ -96,16 +100,29 @@ int main() {
         CHECK(d.remove(""));
         CHECK(!d.remove("srv-does-not-exist"));
 
-        // an applied connection is marked for deletion instead
+        // an applied connection is marked for deletion instead (keyed by PROFILE:
+        // one server can carry two accounts, which are two rows)
         draft::Connection removal;
-        removal.id = "srv-1";
-        removal.user_id = "user-1";
+        removal.from_id = "srv-1";
+        removal.from_user_id = "user-1";
         removal.name = "旧 NAS 改名";
         d.upsert(removal);
-        CHECK(d.remove("srv-1"));
-        CHECK(d.find("srv-1") != nullptr);
-        CHECK(d.find("srv-1")->removal);
+        CHECK(d.remove("user-1"));
+        CHECK(d.find("user-1") != nullptr);
+        CHECK(d.find("user-1")->removal);
         CHECK(d.changes().back().kind == draft::Kind::Remove);
+
+        // deleting a row that only ever existed in the draft erases it: there is
+        // no profile in config.json to remove
+        draft::Draft fresh;
+        draft::Connection created;
+        created.id = "srv-9";
+        created.user_id = "u-9";
+        created.token = "t";
+        fresh.upsert(created);
+        CHECK(fresh.changes().size() == 1);
+        CHECK(fresh.remove("u-9"));
+        CHECK(fresh.changes().empty());
     }
 
     // --- ready(): nothing may be applied before its login succeeded ---------
@@ -116,6 +133,7 @@ int main() {
         draft::Draft d;
         draft::Connection c;
         c.id = "srv-new";
+        c.user_id = "u1";               // a row is identified by its profile
         c.name = "新服务器";
         c.url = "http://host:8096";
         d.upsert(c);

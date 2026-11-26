@@ -219,6 +219,17 @@
     "empty_sub": "Phim và tập đã tải sẽ xuất hiện ở đây để xem ngoại tuyến."
   },
   "setting": {
+    "quick_config": {
+      "header": "Cấu hình nhanh",
+      "hint_idle": "Nhấn A để hiện mã.",
+      "hint_armed": "Mở địa chỉ trên điện thoại/máy tính rồi nhập mã.",
+      "hint_claimed": "Đã kết nối:",
+      "hint_paused": "Mã đã vô hiệu. Nhấn A để lấy mã mới.",
+      "pending_title": "Chờ áp dụng",
+      "pending_none": "Không có thay đổi",
+      "no_listen": "Cổng 8080–8082 đều bận.",
+      "no_ip": "Má chưa vào mạng."
+    },
     "quit_hint": "Bạn cần thoát khỏi ứng dụng và mở lại ứng dụng để các cài đặt mới hoạt động",
     "name": "Tên",
     "version": "Phiên bản",
