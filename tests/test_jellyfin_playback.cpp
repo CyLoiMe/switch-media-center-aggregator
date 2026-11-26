@@ -14,6 +14,7 @@
 #include <api/jellyfin/playback_info.hpp>
 
 using jellyfin::directStreamUrl;
+using jellyfin::sourceUrls;
 using nlohmann::json;
 
 static int failures = 0;
