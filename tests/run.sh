@@ -11,13 +11,19 @@ INC_APP="$ROOT/app/include"
 INC_JSON="$ROOT/library/borealis/library/include/borealis/extern"
 CXX="${CXX:-c++}"
 ARCH="${ARCH:-x86_64}"
+# `-arch` is a clang-on-Darwin flag; g++ on Linux rejects it, and this script has
+# to run in CI (ubuntu) as well as on the Mac that wrote it.
+FLAGS=(-std=gnu++17 -Wall -I"$INC_APP" -I"$INC_JSON")
+case "$(uname -s)" in
+    Darwin) FLAGS+=(-arch "$ARCH") ;;
+esac
 OUT="$(mktemp -d)"
 rc=0
 
 for src in "$ROOT"/tests/test_*.cpp; do
     name="$(basename "$src" .cpp)"
     bin="$OUT/$name"
-    if ! "$CXX" -std=gnu++17 -arch "$ARCH" -Wall -I"$INC_APP" -I"$INC_JSON" "$src" -o "$bin"; then
+    if ! "$CXX" "${FLAGS[@]}" "$src" -o "$bin"; then
         echo "COMPILE FAIL: $name"
         rc=1
         continue

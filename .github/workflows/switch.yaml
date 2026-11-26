@@ -35,6 +35,18 @@ env:
   DEPS_URL: https://github.com/CyLoiMe/switch-media-center-aggregator/releases/download/switch-portlibs
 
 jobs:
+  logic:
+    # The host-compiled pure logic (tests/run.sh): the HTTP parser behind the LAN
+    # config portal, the draft it edits, and the older header-only pieces. They run
+    # here because a parser regression should cost a minute, not a full console
+    # toolchain build — and because the console build cannot exercise "reject this
+    # malformed request" without a device.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Run logic tests
+      run: bash tests/run.sh
+
   build:
     runs-on: ubuntu-latest
     container:
