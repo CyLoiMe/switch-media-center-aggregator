@@ -12,9 +12,13 @@
 
     Pure: no AppConfig, no borealis, no I/O — tests/run.sh compiles it on the host.
 
-    The rule that keeps this list short: the portal may only touch connections that
-    are NOT the active one. Editing the active connection means resetBackend() plus
-    rebuilding the shell, and the shell is the page hosting the portal.
+    The rule that keeps this list short: the portal may only ADD a connection. It
+    lists what exists, and that list is read-only — no edit (an address is what
+    identifies a server, so re-pointing one without a fresh login produces a row
+    that no longer authenticates; the console's `jellyfin_add` owns that job) and no
+    deletion (removing a profile is `removeUser()`, which can clear the active one
+    and needs the whole shell rebuilt). Adding is the one thing a phone keyboard is
+    good for.
 */
 
 #pragma once
@@ -25,18 +29,13 @@
 
 namespace draft {
 
-/// One connection as the page sees it.
+/// One connection the page is about to create.
 ///
-/// A login can change both ids (a restored server issues a new server Id, a
-/// recreated account a new user Id), so an entry has two identities: `id`/`user_id`
-/// are what the server just returned, `from_id`/`from_user_id` are the entry being
-/// replaced. Apply needs the old pair for AppConfig::updateConnection() and the new
-/// pair for the value it writes. Creating leaves `from_*` empty.
+/// Only ever a NEW row: a login fills the ids, `applyNow()` writes it with
+/// `upsertServer`/`upsertUser` and never touches the active connection.
 struct Connection {
-    std::string from_id;       ///< AppServer::id being edited/removed, empty when creating
-    std::string from_user_id;  ///< AppUser::id being edited/removed, empty when creating
     std::string id;            ///< AppServer::id (as resolved by the login)
-    std::string user_id;       ///< AppUser::id
+    std::string user_id;       ///< AppUser::id — the row identity, one per account
     std::string type = "jellyfin";  ///< jellyfin | emby (Plex is console-only)
     std::string name;          ///< display name; falls back to the host
     std::string url;           ///< remote address
@@ -45,26 +44,17 @@ struct Connection {
     std::string user_name;
     std::string image_tag;     ///< avatar tag, for the tile
     bool can_download = true;
-    bool removal = false;
-
-    bool needsLogin() const { return this->token.empty(); }
-    /// The identity of this ROW. Keyed on the profile, not the server: one server
-    /// can hold two accounts (a shared AppServer, two AppUsers), and those are two
-    /// different rows the page must be able to edit and delete independently.
-    const std::string& key() const { return this->from_user_id.empty() ? this->user_id : this->from_user_id; }
 };
 
 enum class Kind {
     UserAgent,
     Proxy,
-    Add,     ///< create a connection
-    Edit,    ///< change a connection's address/name/account
-    Remove,  ///< delete a connection
+    Add,  ///< create a connection
 };
 
 struct Change {
     Kind kind;
-    std::string name;  ///< connection name for Add/Edit/Remove, empty for the two knobs
+    std::string name;  ///< connection name for Add, empty for the two knobs
 };
 
 /// Trims, then requires `http://` or `https://`, then drops a trailing '/'.
@@ -144,17 +134,16 @@ public:
         this->connections.clear();
     }
 
-    /// Create-or-replace. Keyed on the entry being replaced (`from_id`), so an
-    /// edit whose re-login produced new ids still replaces the right row instead
-    /// of appending a second one.
+    /// Create-or-replace, keyed on the account: re-running the login for an
+    /// account that is already drafted replaces its row instead of appending a
+    /// second one (the user tried again, with a typo fixed).
     void upsert(Connection c) {
-        const std::string key = c.key();
-        if (key.empty()) {
+        if (c.user_id.empty()) {
             this->connections.push_back(std::move(c));
             return;
         }
         for (auto& existing : this->connections) {
-            if (existing.key() == key) {
+            if (existing.user_id == c.user_id) {
                 existing = std::move(c);
                 return;
             }
@@ -162,34 +151,22 @@ public:
         this->connections.push_back(std::move(c));
     }
 
-    /// Marks an existing connection for deletion; a connection that only existed
-    /// in the draft is simply dropped (nothing was ever applied).
-    bool remove(const std::string& key) {
+    /// Drops a pending row: nothing was applied, so forgetting it is the whole
+    /// undo (the "I did not mean to add that" button next to the card). Removing
+    /// an account that already exists is NOT this — it is `AppConfig::removeUser()`
+    /// on the console, and it has no path here at all.
+    bool forget(const std::string& userId) {
         for (auto it = this->connections.begin(); it != this->connections.end(); ++it) {
-            if (it->key() != key) continue;
-            // `from_user_id` is what makes the row exist in config.json. Without
-            // it the entry was only ever a draft, so deleting it must not turn
-            // into a removeUser() call on a profile that was never written.
-            if (it->from_user_id.empty()) {
-                this->connections.erase(it);
-            } else {
-                it->removal = true;
-            }
+            if (it->user_id != userId) continue;
+            this->connections.erase(it);
             return true;
         }
         return false;
     }
 
-    const Connection* find(const std::string& key) const {
+    const Connection* find(const std::string& userId) const {
         for (const auto& c : this->connections)
-            if (c.key() == key) return &c;
-        return nullptr;
-    }
-
-    /// Mutable lookup for the portal's edit path (name / LAN address / type).
-    Connection* find(const std::string& key) {
-        for (auto& c : this->connections)
-            if (c.key() == key) return &c;
+            if (c.user_id == userId) return &c;
         return nullptr;
     }
 
@@ -199,22 +176,15 @@ public:
         std::vector<Change> out;
         if (this->uaSet || this->uaCleared) out.push_back({Kind::UserAgent, {}});
         if (this->proxySet || this->proxyCleared) out.push_back({Kind::Proxy, {}});
-        for (const auto& c : this->connections) {
-            if (c.removal)
-                out.push_back({Kind::Remove, c.name});
-            else if (c.from_id.empty())
-                out.push_back({Kind::Add, c.name});   // nothing to replace: this is new
-            else
-                out.push_back({Kind::Edit, c.name});
-        }
+        for (const auto& c : this->connections) out.push_back({Kind::Add, c.name});
         return out;
     }
 
     /// True when every pending connection has a token, i.e. Apply cannot fail on
-    /// an unauthenticated entry. A removal needs none.
+    /// an unauthenticated entry.
     bool ready() const {
         for (const auto& c : this->connections)
-            if (!c.removal && c.token.empty()) return false;
+            if (c.token.empty()) return false;
         return true;
     }
 };

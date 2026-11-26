@@ -3,6 +3,7 @@
 #include <fmt/format.h>
 
 #include "utils/config.hpp"
+#include "view/auto_tab_frame.hpp"
 
 using namespace brls::literals;
 
@@ -11,9 +12,7 @@ namespace {
 std::string kindMark(draft::Kind kind) {
     switch (kind) {
         case draft::Kind::Add: return "+ ";
-        case draft::Kind::Edit: return "~ ";
-        case draft::Kind::Remove: return "- ";
-        default: return "· ";
+        default: return "· ";  // the two knobs
     }
 }
 
@@ -53,6 +52,33 @@ QuickConfig::~QuickConfig() {
 }
 
 brls::View* QuickConfig::getDefaultFocus() { return this; }
+
+/// B leaves the page — and it has to be THIS page that answers it.
+///
+/// The registration lives in willAppear(), not in the constructor: pushDetailView()
+/// registers its own B on the view and runs before addView(), which is what calls
+/// willAppear(). Registering here replaces that action (View::registerAction keys on
+/// the button), so the nearest handler for B is guaranteed to be the page.
+///
+/// Why it matters: when no ancestor of the focused view answers B, the key reaches
+/// the AppletFrame, whose handler calls popContentView() — with a single activity
+/// on the stack that is the "close the app?" dialog followed by Application::quit().
+/// A settings page must never be able to offer that.
+void QuickConfig::willAppear(bool resetState) {
+    brls::Box::willAppear(resetState);
+    this->registerAction(
+        "hints/back"_i18n, brls::BUTTON_B,
+        [this](brls::View*) {
+            brls::Logger::info("quick config: B, leaving the page");
+            if (auto* audio = brls::Application::getAudioPlayer()) audio->play(brls::SOUND_BACK);
+            // In the detail stack (the normal case): pop it. Outside the sidebar
+            // (presented as an activity of its own): dismiss that activity.
+            if (ui::popDetail(this)) return true;
+            this->dismiss();
+            return true;
+        },
+        false, true, brls::SOUND_NONE);
+}
 
 brls::View* QuickConfig::create() { return new QuickConfig(); }
 

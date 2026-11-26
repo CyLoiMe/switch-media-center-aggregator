@@ -6,52 +6,93 @@
 <meta name="robots" content="noindex">
 <title>SMCA</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --accent: #2f6feb;
+    --ok: #1f9d55;
+    --warn: #c8891a;
+    --danger: #c0392b;
+    --line: #e3e6ea;
+    --surface: #fff;
+    --field: #fff;
+    --field-line: #d4d8de;
+    --muted: #6b7280;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #6f9dff;
+      --ok: #3ec27a;
+      --warn: #e5b558;
+      --danger: #ef6d5c;
+      --line: #2a2f37;
+      --surface: #1b1e23;
+      --field: #1e2127;
+      --field-line: #333a44;
+      --muted: #98a2b3;
+    }
+    body { background: #15171b; color: #e9ebef; }
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 16px 16px 96px;
+    margin: 0; padding: 16px 16px 112px;
     font: 16px/1.45 -apple-system, "Segoe UI", "Noto Sans", "PingFang SC", sans-serif;
     background: #f6f6f7; color: #16181d;
   }
-  @media (prefers-color-scheme: dark) {
-    body { background: #15171b; color: #e9ebef; }
-    input, select, button { background: #1e2127; color: #e9ebef; border-color: #333a44; }
-    .card { background: #1b1e23; border-color: #2a2f37; }
-    .muted { color: #98a2b3; }
-  }
   h1 { font-size: 20px; margin: 0 0 4px; }
-  .muted { color: #6b7280; font-size: 14px; }
+  h2.section { font-size: 15px; font-weight: 600; margin: 24px 2px 8px; opacity: .72; }
+  .muted { color: var(--muted); font-size: 14px; }
   .card {
-    background: #fff; border: 1px solid #e3e6ea; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
     padding: 14px; margin: 12px 0;
   }
   label { display: block; font-size: 13px; margin: 10px 0 4px; color: inherit; opacity: .8; }
   input, select {
     width: 100%; padding: 10px 12px; font-size: 16px;
-    border: 1px solid #d4d8de; border-radius: 10px; background: #fff;
+    border: 1px solid var(--field-line); border-radius: 10px;
+    background: var(--field); color: inherit;
   }
   button {
     padding: 10px 16px; font-size: 16px; border-radius: 10px;
-    border: 1px solid #d4d8de; background: #fff; margin-top: 10px;
+    border: 1px solid var(--field-line); background: var(--field); color: inherit;
+    margin-top: 10px;
   }
-  button.primary { background: #2f6feb; border-color: #2f6feb; color: #fff; }
-  button.danger { color: #c0392b; border-color: #e5b4ae; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .row { display: flex; gap: 8px; align-items: center; }
   .row > * { flex: 1; }
   .row > button { flex: 0 0 auto; margin-top: 0; }
   #pinScreen { max-width: 380px; margin: 12vh auto 0; text-align: center; }
   #pin { font-size: 32px; letter-spacing: 12px; text-align: center; }
-  .err { color: #c0392b; font-size: 14px; min-height: 20px; margin-top: 8px; }
+  .err { color: var(--danger); font-size: 14px; min-height: 20px; margin-top: 8px; }
   .pinItem { font-size: 14px; padding: 2px 0; }
   #bar {
     position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px;
-    background: rgba(127,127,127,.12); backdrop-filter: blur(8px);
+    background: rgba(127,127,127,.14); backdrop-filter: blur(8px);
     display: flex; gap: 8px; align-items: center;
   }
   #bar .grow { flex: 1; font-size: 14px; }
   .hidden { display: none !important; }
-  .conn { border-top: 1px solid #e3e6ea33; padding-top: 10px; margin-top: 10px; }
-  .conn:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+
+  /* ---- one card per account: the left rule is the whole point ---- */
+  .accounts { display: flex; flex-direction: column; gap: 10px; }
+  .acct { margin: 0; border-left: 4px solid var(--accent); }
+  .acct[data-active="1"] { border-left-color: var(--warn); }
+  .acct[data-pending="1"] { border-left-color: var(--ok); }
+  .acct-head { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+  .acct-name { font-weight: 600; font-size: 17px; overflow-wrap: anywhere; }
+  .chips { display: flex; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+  .chip {
+    font-size: 12px; line-height: 18px; padding: 1px 8px; border-radius: 999px;
+    background: rgba(127,127,127,.16); color: var(--muted);
+  }
+  .chip.on { background: rgba(200,137,26,.18); color: var(--warn); }
+  .chip.add { background: rgba(31,157,85,.18); color: var(--ok); }
+  .kv { margin: 8px 0 0; font-size: 14px; }
+  .kv > div { display: flex; gap: 10px; padding: 3px 0; }
+  .kv dt { flex: 0 0 76px; color: var(--muted); }
+  .kv dd { margin: 0; flex: 1; overflow-wrap: anywhere; }
+  .acct-foot { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 10px; }
+  .acct-foot .muted { flex: 1; }
+  .acct-foot button { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -83,13 +124,14 @@
     <button data-save="proxy" data-k="conn_save"></button>
   </div>
 
-  <div class="card">
-    <label data-k="conn_title"></label>
-    <div id="conns"></div>
-  </div>
+  <!-- Accounts: one read-only card each (app.js builds them). Adding is the only
+       thing this page does with them — switching, editing and removing a
+       connection belong to the console. -->
+  <h2 class="section" data-k="conn_title"></h2>
+  <div id="conns" class="accounts"></div>
 
   <div class="card">
-    <label data-k="conn_add"></label>
+    <label data-k="conn_type"></label>
     <div class="row">
       <select id="newType">
         <option value="jellyfin">Jellyfin</option>

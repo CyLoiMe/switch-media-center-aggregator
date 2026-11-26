@@ -152,9 +152,9 @@ bool runOnUi(std::function<void()> fn, int timeoutMs = kUiTimeoutMs) {
 const char* const kWebKeys[] = {
     "title", "pin_title", "pin_hint", "pin_submit", "pin_wrong", "pin_paused", "pin_idle",
     "claimed_other", "ua_label", "ua_hint", "proxy_label", "conn_title", "conn_name", "conn_addr",
-    "conn_lan", "conn_type", "conn_user", "conn_password", "conn_add", "conn_delete", "conn_save",
-    "conn_cancel", "conn_active", "conn_active_hint", "conn_addr_locked", "pending_title",
-    "pending_none", "apply", "discard", "saved", "failed", "disconnected", "delete_confirm",
+    "conn_lan", "conn_type", "conn_user", "conn_password", "conn_add", "conn_save",
+    "conn_active", "conn_lan_short", "conn_pending_add", "undo", "pending_title", "pending_none",
+    "apply", "discard", "saved", "failed", "disconnected",
 };
 
 nlohmann::json stringsJson() {
@@ -184,7 +184,7 @@ std::string readAsset(const std::string& path) {
 
 nlohmann::json connectionJson(const draft::Connection& c) {
     return nlohmann::json{
-        {"id", c.key()},
+        {"id", c.user_id},
         {"name", c.name},
         {"url", c.url},
         {"local_url", c.local_url},
@@ -193,39 +193,11 @@ nlohmann::json connectionJson(const draft::Connection& c) {
     };
 }
 
-/// Builds the draft row for an applied connection: the page edits what is in
-/// config.json, so the first touch of a row starts from the stored values (and the
-/// stored token — the page never sees one).
-bool seedFromConfig(const AppConfig& cfg, const std::string& profileId, draft::Connection& out) {
-    for (const auto& u : cfg.getUsers()) {
-        if (u.id != profileId) continue;
-        out.from_id = u.server_id;
-        out.from_user_id = u.id;
-        out.id = u.server_id;
-        out.user_id = u.id;
-        out.token = u.access_token;
-        out.user_name = u.name;
-        out.can_download = u.can_download;
-        for (const auto& s : cfg.getServers()) {
-            if (s.id != u.server_id) continue;
-            out.name = s.name;
-            out.type = s.type;
-            out.local_url = s.local_url;
-            if (!s.urls.empty()) out.url = s.urls.front();
-        }
-        if (out.name.empty()) out.name = u.name;
-        return true;
-    }
-    return false;
-}
-
 const char* kindName(draft::Kind k) {
     switch (k) {
         case draft::Kind::UserAgent: return "ua";
         case draft::Kind::Proxy: return "proxy";
         case draft::Kind::Add: return "add";
-        case draft::Kind::Edit: return "edit";
-        case draft::Kind::Remove: return "remove";
     }
     return "?";
 }
@@ -393,15 +365,6 @@ bool Portal::applyNow() {
     }
 
     for (const auto& c : this->draft_.connections) {
-        if (c.removal) {
-            if (!c.from_user_id.empty()) cfg.removeUser(c.from_user_id);
-            bool referenced = false;
-            for (const auto& u : cfg.getUsers())
-                if (u.server_id == c.from_id) referenced = true;
-            if (!referenced && !c.from_id.empty()) cfg.removeServer(c.from_id);
-            continue;
-        }
-
         AppServer server;
         server.id = c.id;
         server.name = c.name;
@@ -419,17 +382,13 @@ bool Portal::applyNow() {
         profile.can_download = c.can_download;
         profile.thumb = jellyfin::userImageUrl(c.url, c.user_id, c.image_tag, c.type == "emby");
 
-        if (c.from_id.empty()) {
-            // Register without switching: upsert* never touches server_url/user_id,
-            // which is the difference that lets a portal add an account while the
-            // console keeps browsing a different one.
-            cfg.upsertServer(server);
-            cfg.upsertUser(profile);
-        } else {
-            // A re-login can change both ids; updateConnection() knows to migrate
-            // the profile's own settings and to drop the stale server entry.
-            cfg.updateConnection(c.from_id, c.from_user_id, server, profile, c.url, false);
-        }
+        // Register without switching: upsert* never touches server_url/user_id,
+        // which is the difference that lets a portal add an account while the
+        // console keeps browsing a different one. A drafted row is always new —
+        // re-pointing an existing connection is the console form's job, not a
+        // merge this page could do without a fresh login.
+        cfg.upsertServer(server);
+        cfg.upsertUser(profile);
     }
 
     this->draft_.clear();
@@ -526,6 +485,19 @@ Response Portal::handle(const Request& req) {
                 for (const auto& c : this->draft_.changes())
                     changes.push_back(nlohmann::json{{"kind", kindName(c.kind)}, {"name", c.name}});
                 d["changes"] = std::move(changes);
+                // The pending rows themselves, so a card can show "waiting for
+                // Apply" next to the account it will add instead of leaving the
+                // page with a line of text and no idea which login it came from.
+                nlohmann::json rows = nlohmann::json::array();
+                for (const auto& c : this->draft_.connections) {
+                    rows.push_back(nlohmann::json{{"id", c.user_id},
+                        {"name", c.name},
+                        {"url", c.url},
+                        {"local_url", c.local_url},
+                        {"type", c.type},
+                        {"user_name", c.user_name}});
+                }
+                d["rows"] = std::move(rows);
                 j["draft"] = std::move(d);
                 *out = j.dump();
             }))
@@ -622,8 +594,6 @@ Response Portal::handle(const Request& req) {
             // only slow thing the portal does. The UI thread must not wait for it.
             const jellyfin::LoginResult r = jellyfin::login(url, user, pass);
             draft::Connection c;
-            c.from_id = body.value("from_id", std::string());
-            c.from_user_id = body.value("from_user_id", std::string());
             c.type = type;
             c.url = url;
             c.local_url = draft::normalizeUrl(body.value("local_url", std::string()));
@@ -647,59 +617,17 @@ Response Portal::handle(const Request& req) {
         }
     }
 
-    // --- edit / delete a connection already in the draft ----------------------
-    if (req.method == "POST" && req.path == "/api/draft/connection") {
+    // --- drop a row the page added by mistake ---------------------------------
+    // Only ever a row that is still in the draft: nothing was written, so dropping
+    // it IS the undo. Deleting an account that exists has no endpoint here at all —
+    // that is removeUser() on the console, and it can clear the active profile,
+    // i.e. rebuild the shell that is hosting this page.
+    if (req.method == "POST" && req.path == "/api/draft/forget") {
         const nlohmann::json body = parseBody(req.body);
         const std::string key = body.value("id", std::string());
-        const std::string name = body.value("name", std::string());
-        const std::string local = draft::normalizeUrl(body.value("local_url", std::string()));
-        std::string type = body.value("type", std::string());
-        if (type != "emby") type = "jellyfin";
-
-        auto out = std::make_shared<std::string>();
-        if (!runOnUi([this, out, key, name, local, type]() {
-                draft::Connection* c = this->draft_.find(key);
-                if (!c) {
-                    // First touch of an applied row: start from what is stored. If
-                    // the new values are the stored ones, queue nothing — otherwise
-                    // merely opening the editor would leave a pending "edit".
-                    draft::Connection seeded;
-                    if (!seedFromConfig(AppConfig::instance(), key, seeded)) return;
-                    const bool unchanged = (name.empty() || name == seeded.name) &&
-                                           local == seeded.local_url && type == seeded.type;
-                    if (unchanged) {
-                        *out = connectionJson(seeded).dump();
-                        return;
-                    }
-                    this->draft_.upsert(std::move(seeded));
-                    c = this->draft_.find(key);
-                    if (!c) return;
-                }
-                if (!name.empty()) c->name = name;
-                c->local_url = local;
-                c->type = type;
-                *out = connectionJson(*c).dump();
-            }))
-            return errorJson(504, "ui timeout");
-        if (out->empty()) return errorJson(404, "no such row");
-        nlohmann::json built = nlohmann::json::parse(*out, nullptr, false);
-        if (built.is_discarded()) return errorJson(500, "row");
-        return jsonResponse(200, built);
-    }
-
-    if (req.method == "DELETE" && req.path.rfind("/api/draft/connection/", 0) == 0) {
-        const std::string key = req.path.substr(std::string("/api/draft/connection/").size());
+        if (key.empty()) return errorJson(400, "id");
         auto found = std::make_shared<bool>(false);
-        if (!runOnUi([this, key, found]() {
-                if (!this->draft_.find(key)) {
-                    // Deleting a row that was never drafted: seed it from config so
-                    // the removal has ids to work with.
-                    draft::Connection seeded;
-                    if (!seedFromConfig(AppConfig::instance(), key, seeded)) return;
-                    this->draft_.upsert(std::move(seeded));
-                }
-                *found = this->draft_.remove(key);
-            }))
+        if (!runOnUi([this, key, found]() { *found = this->draft_.forget(key); }))
             return errorJson(504, "ui timeout");
         if (!*found) return errorJson(404, "no such row");
         return jsonResponse(200, nlohmann::json{{"ok", true}});

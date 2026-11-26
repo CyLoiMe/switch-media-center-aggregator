@@ -165,6 +165,23 @@ AutoTabFrame::AutoTabFrame() {
     // horizontal / top mode default: the tab bar itself is the holder.
     // setSideBarPosition(LEFT/RIGHT) rewrites this into a scroll+footer column.
     this->sidebarHolder = this->sidebar;
+
+    // B with a detail open belongs to the frame, wherever the focus happens to be —
+    // the sidebar included. A detail that lost its focus (or a page whose own
+    // handler is missing) must still be closable, and every ancestor below the frame
+    // is a page that would answer B with something else: with nothing in between,
+    // the key lands on AppletFrame, whose handler offers to CLOSE THE APP.
+    //
+    // Hidden: the page on top owns the visible hint. Returns false with no detail
+    // open, so a plain tab page keeps its normal back behaviour.
+    this->registerAction(
+        "hints/back"_i18n, brls::BUTTON_B,
+        [this](brls::View*) {
+            if (!this->hasDetailView()) return false;
+            playBackSound();
+            return this->popDetailView();
+        },
+        true, true, brls::SOUND_NONE);
 }
 
 void AutoTabFrame::setTabChangedAction(const std::function<void(size_t)>& event) { this->tabChangedAction = event; }

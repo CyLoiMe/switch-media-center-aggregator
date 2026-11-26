@@ -6,11 +6,18 @@
 // else. Every change is a POST to /api/draft/*, and only "Apply" writes the config
 // — the pending list in the bottom bar is the console's view of exactly the same
 // draft, so the two screens cannot disagree.
+//
+// Accounts are listed, never touched: the cards are read-only, the only action is
+// "add one". Editing and deleting a connection belong to the console — an address
+// identifies a server, and removing a profile can clear the active one, i.e. rebuild
+// the shell that is hosting this page. A row this page added can be taken back
+// ("Undo") until Apply writes it.
 
 const $ = (id) => document.getElementById(id);
 let strings = {};
 let lastState = null;
 let poll = null;
+let connSig = '';
 
 const t = (k) => strings[k] || k;
 
@@ -65,11 +72,13 @@ async function load(full) {
 
   showEditor();
   if (full) {
+    // Only on the first load and after a claim: the fields are the user's while
+    // the poll runs underneath them.
     $('ua').value = (body.current && body.current.ua) || '';
     $('proxy').value = (body.current && body.current.proxy) || '';
-    renderConnections(body);
   }
   renderWho(body);
+  renderConnections(body);
   renderPending(body);
 }
 
@@ -91,7 +100,7 @@ function renderPending(s) {
     for (const c of changes) {
       const line = document.createElement('div');
       line.className = 'pinItem';
-      const mark = c.kind === 'add' ? '+ ' : c.kind === 'edit' ? '~ ' : c.kind === 'remove' ? '- ' : '· ';
+      const mark = c.kind === 'add' ? '+ ' : c.kind === 'remove' ? '- ' : '· ';
       const label = c.kind === 'ua' ? t('ua_label')
                   : c.kind === 'proxy' ? t('proxy_label')
                   : (c.name || '?');
@@ -103,83 +112,100 @@ function renderPending(s) {
   $('discard').disabled = !changes.length;
 }
 
+// ---------------------------------------------------------------- accounts
+
+function chip(text, cls) {
+  const el = document.createElement('span');
+  el.className = 'chip' + (cls ? ' ' + cls : '');
+  el.textContent = text;
+  return el;
+}
+
+function kvRow(dl, label, value) {
+  if (!value) return;
+  const row = document.createElement('div');
+  const dt = document.createElement('dt');
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  dd.textContent = value;
+  row.appendChild(dt);
+  row.appendChild(dd);
+  dl.appendChild(row);
+}
+
+/// One card per account. Accounts are read-only here: switching, editing and
+/// removing one is the console's job. The only button a card can carry belongs to a
+/// row that is still pending — an account this page just logged in and Apply has not
+/// written yet, which can be taken back.
+function accountCard(c, pending) {
+  const card = document.createElement('div');
+  card.className = 'card acct';
+  if (c.active) card.setAttribute('data-active', '1');
+  if (pending) card.setAttribute('data-pending', '1');
+
+  const head = document.createElement('div');
+  head.className = 'acct-head';
+  const name = document.createElement('div');
+  name.className = 'acct-name';
+  name.textContent = c.name || c.url || '?';
+  head.appendChild(name);
+
+  const chips = document.createElement('div');
+  chips.className = 'chips';
+  chips.appendChild(chip(c.type === 'emby' ? 'Emby' : 'Jellyfin'));
+  if (c.active) chips.appendChild(chip(t('conn_active'), 'on'));
+  if (pending) chips.appendChild(chip(t('conn_pending_add'), 'add'));
+  head.appendChild(chips);
+  card.appendChild(head);
+
+  const kv = document.createElement('dl');
+  kv.className = 'kv';
+  kvRow(kv, t('conn_addr'), c.url);
+  kvRow(kv, t('conn_lan_short'), c.local_url);
+  kvRow(kv, t('conn_user'), c.user_name);
+  card.appendChild(kv);
+
+  if (pending) {
+    const foot = document.createElement('div');
+    foot.className = 'acct-foot';
+    const undo = document.createElement('button');
+    undo.textContent = t('undo');
+    undo.onclick = async () => {
+      await jfetch('/api/draft/forget', { method: 'POST', body: JSON.stringify({ id: c.id }) });
+      load(false);
+    };
+    foot.appendChild(undo);
+    card.appendChild(foot);
+  }
+  return card;
+}
+
 function renderConnections(s) {
+  const applied = s.connections || [];
+  const rows = (s.draft && s.draft.rows) || [];
+
+  const view = [];
+  const seen = {};
+  for (const c of applied) {
+    seen[c.id] = true;
+    view.push({ c: c, pending: false });
+  }
+  for (const r of rows) {
+    // A row that is already applied (the same account logged in twice) needs no
+    // second card; the console list is the truth once Apply has run.
+    if (seen[r.id]) continue;
+    view.push({ c: r, pending: true });
+  }
+
+  // The poll runs every 1.5 s; rebuilding the DOM each time would throw away the
+  // button under a finger. Rebuild only when the picture actually changed.
+  const sig = JSON.stringify(view);
+  if (sig === connSig) return;
+  connSig = sig;
+
   const box = $('conns');
   box.textContent = '';
-
-  for (const c of s.connections || []) {
-    const row = document.createElement('div');
-    row.className = 'conn';
-
-    if (c.active) {
-      // Editing the connection being browsed would need resetBackend() and a shell
-      // rebuild — and the shell is the page hosting this portal. Say so instead of
-      // offering a button that cannot work.
-      const name = document.createElement('div');
-      name.textContent = `${c.name || c.url}  —  ${t('conn_active')}`;
-      const why = document.createElement('div');
-      why.className = 'muted';
-      why.textContent = t('conn_active_hint');
-      row.appendChild(name);
-      row.appendChild(why);
-      box.appendChild(row);
-      continue;
-    }
-
-    const nameInput = document.createElement('input');
-    nameInput.value = c.name || '';
-    nameInput.placeholder = t('conn_name');
-
-    const laneInput = document.createElement('input');
-    laneInput.value = c.local_url || '';
-    laneInput.placeholder = t('conn_lan');
-    laneInput.autocapitalize = 'off';
-    laneInput.spellcheck = false;
-
-    const typeSel = document.createElement('select');
-    for (const ty of ['jellyfin', 'emby']) {
-      const o = document.createElement('option');
-      o.value = ty;
-      o.textContent = ty === 'emby' ? 'Emby' : 'Jellyfin';
-      if ((c.type || 'jellyfin') === ty) o.selected = true;
-      typeSel.appendChild(o);
-    }
-
-    const addr = document.createElement('div');
-    addr.className = 'muted';
-    addr.textContent = `${c.url || ''}  (${t('conn_addr_locked')})`;
-
-    const save = document.createElement('button');
-    save.textContent = t('conn_save');
-    save.onclick = async () => {
-      await jfetch('/api/draft/connection', {
-        method: 'POST',
-        body: JSON.stringify({ id: c.id, name: nameInput.value, local_url: laneInput.value, type: typeSel.value }),
-      });
-      load(false);
-    };
-
-    const del = document.createElement('button');
-    del.className = 'danger';
-    del.textContent = t('conn_delete');
-    del.onclick = async () => {
-      if (!confirm(t('delete_confirm'))) return;
-      await jfetch('/api/draft/connection/' + encodeURIComponent(c.id), { method: 'DELETE' });
-      load(false);
-    };
-
-    const act = document.createElement('div');
-    act.className = 'row';
-    act.appendChild(save);
-    act.appendChild(del);
-
-    row.appendChild(nameInput);
-    row.appendChild(laneInput);
-    row.appendChild(typeSel);
-    row.appendChild(addr);
-    row.appendChild(act);
-    box.appendChild(row);
-  }
+  for (const v of view) box.appendChild(accountCard(v.c, v.pending));
 }
 
 // ---------------------------------------------------------------- actions

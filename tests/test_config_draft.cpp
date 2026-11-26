@@ -67,62 +67,48 @@ int main() {
         CHECK(changes[1].kind == draft::Kind::Proxy);
 
         draft::Connection added;
+        added.id = "srv-new";
+        added.user_id = "u-new";
         added.name = "客厅2";
         added.url = "http://192.168.3.12:8096";
         added.token = "t";
         d.upsert(added);
 
-        // an edit carries both identities: the row it replaces and the ids the
-        // re-login just returned (they may differ — restored server, new account)
-        draft::Connection edited;
-        edited.from_id = "srv-1";
-        edited.from_user_id = "user-1";
-        edited.id = "srv-1";
-        edited.user_id = "user-1";
-        edited.name = "旧 NAS";
-        edited.token = "t";
-        d.upsert(edited);
-
         changes = d.changes();
-        CHECK(changes.size() == 4);
+        CHECK(changes.size() == 3);
         CHECK(changes[2].kind == draft::Kind::Add);
         CHECK(changes[2].name == "客厅2");
-        CHECK(changes[3].kind == draft::Kind::Edit);
-        CHECK(changes[3].name == "旧 NAS");
 
-        // editing the same id replaces instead of appending
-        draft::Connection again = edited;
-        again.name = "旧 NAS 改名";
+        // logging the same account in again replaces its row instead of appending
+        // a second one — a row is an account, and there is only ever one of those
+        draft::Connection again = added;
+        again.name = "客厅2 改名";
         d.upsert(again);
-        CHECK(d.changes().size() == 4);
+        CHECK(d.changes().size() == 3);
+        CHECK(d.changes().back().name == "客厅2 改名");
 
-        // a connection that only ever existed in the draft is dropped outright
-        CHECK(d.remove(""));
-        CHECK(!d.remove("srv-does-not-exist"));
+        // undo before Apply: the row and its pending item are both gone, and
+        // nothing reaches config.json
+        CHECK(!d.forget("u-nope"));
+        CHECK(d.forget("u-new"));
+        CHECK(d.find("u-new") == nullptr);
+        CHECK(d.changes().size() == 2);
 
-        // an applied connection is marked for deletion instead (keyed by PROFILE:
-        // one server can carry two accounts, which are two rows)
-        draft::Connection removal;
-        removal.from_id = "srv-1";
-        removal.from_user_id = "user-1";
-        removal.name = "旧 NAS 改名";
-        d.upsert(removal);
-        CHECK(d.remove("user-1"));
-        CHECK(d.find("user-1") != nullptr);
-        CHECK(d.find("user-1")->removal);
-        CHECK(d.changes().back().kind == draft::Kind::Remove);
-
-        // deleting a row that only ever existed in the draft erases it: there is
-        // no profile in config.json to remove
-        draft::Draft fresh;
-        draft::Connection created;
-        created.id = "srv-9";
-        created.user_id = "u-9";
-        created.token = "t";
-        fresh.upsert(created);
-        CHECK(fresh.changes().size() == 1);
-        CHECK(fresh.remove("u-9"));
-        CHECK(fresh.changes().empty());
+        // two accounts on ONE server are two rows: the row identity is the profile,
+        // never the server id (adding the second one must not replace the first)
+        draft::Connection sharedA;
+        sharedA.id = "srv-shared";
+        sharedA.user_id = "u-a";
+        sharedA.name = "共用服务器 / A";
+        sharedA.token = "t";
+        draft::Connection sharedB = sharedA;
+        sharedB.user_id = "u-b";
+        sharedB.name = "共用服务器 / B";
+        d.upsert(sharedA);
+        d.upsert(sharedB);
+        CHECK(d.changes().size() == 4);  // ua + proxy + two adds
+        CHECK(d.find("u-a") != nullptr);
+        CHECK(d.find("u-b") != nullptr);
     }
 
     // --- ready(): nothing may be applied before its login succeeded ---------
@@ -141,17 +127,9 @@ int main() {
 
         draft::Connection done = c;
         done.token = "abc";
-        done.user_id = "u1";
         d.upsert(done);
         CHECK(d.changes().size() == 1);  // replaced, not appended
         CHECK(d.ready());
-
-        draft::Connection rm;
-        rm.id = "old";
-        rm.user_id = "u-old";
-        rm.removal = true;
-        d.upsert(rm);
-        CHECK(d.ready());               // a removal needs no token
     }
 
     if (failures == 0) printf("test_config_draft: ok\n");

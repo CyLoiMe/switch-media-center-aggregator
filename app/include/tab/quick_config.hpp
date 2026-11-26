@@ -33,6 +33,10 @@ public:
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override;
 
+    /// Registers the page's own B. See the note in quick_config.cpp: it must be the
+    /// nearest handler, or B bubbles into the shell's "close the app?" dialog.
+    void willAppear(bool resetState = false) override;
+
     brls::View* getDefaultFocus() override;
 
     static brls::View* create();
