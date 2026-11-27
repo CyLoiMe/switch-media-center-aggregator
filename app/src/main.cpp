@@ -122,11 +122,18 @@ int main(int argc, char* argv[]) {
     // Line buffering matters: without it the last ~16 KB, including the line right
     // before a crash, stays in the buffer and dies with the process.
     if (access("sdmc:/switch/SMCA/crashlog", F_OK) == 0) {
+        // Keep the previous run under a second name. The log worth reading is the
+        // one from the run that died, and the relaunch needed to copy it off the
+        // console used to truncate it — which is exactly how a crash report turns
+        // into "that log has no trace of what you did".
+        std::remove("sdmc:/switch/SMCA/last-run.prev.log");
+        std::rename("sdmc:/switch/SMCA/last-run.log", "sdmc:/switch/SMCA/last-run.prev.log");
         if (FILE* f = std::fopen("sdmc:/switch/SMCA/last-run.log", "w+")) {
             std::setvbuf(f, nullptr, _IOLBF, 0);
             brls::Logger::setLogOutput(f);
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
             brls::Logger::info("crash log enabled by switch/SMCA/crashlog");
+            brls::Logger::info("previous run (the one that died) is last-run.prev.log");
         }
     }
 #endif

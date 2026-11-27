@@ -158,6 +158,10 @@ void acceptLoop(std::shared_ptr<HttpServer::State> st) {
         p.events = POLLIN;
         const int rc = ::poll(&p, 1, kAcceptPollMs);
         if (rc <= 0) continue;                 // timeout or EINTR: re-check running
+        // POLLERR/POLLHUP also count as "something happened", and accept() on a
+        // blocking listener with no connection pending would never return — that
+        // would hang the join in stop() and freeze the console on the way out.
+        if (!(p.revents & POLLIN)) continue;
         if (!st->running.load()) break;
 
         sockaddr_in addr{};
@@ -209,6 +213,12 @@ void workerLoop(std::shared_ptr<HttpServer::State> st) {
             // of served. A half-closed server answering a client would hold up the
             // join that the page destructor is doing.
             if (!st->running.load()) return;
+            // wait_for() also returns when the WAIT TIMES OUT, and the predicate is
+            // not a postcondition: this runs every 500 ms in an idle server, so
+            // without this line the empty deque is read through front() — an
+            // out-of-bounds read that took the console down half a second after the
+            // page opened (0d0f7c31).
+            if (st->queue.empty()) continue;
             fd = st->queue.front();
             st->queue.pop_front();
             auto it = st->queuePeers.find(fd);
