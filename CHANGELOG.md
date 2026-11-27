@@ -2,49 +2,25 @@
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-27
+
+The LAN config portal: readable accounts, and leaving the page no longer closes the
+app.
+
 ### Changed
 
-- **Each account on the LAN config page is its own card.** The list used to be one
-  block of input rows separated by a hairline, so it was impossible to tell where one
-  account stopped. A card now carries the name, the server type and the "in use" state
-  on top, the remote address / LAN address / username underneath, and an accent rule
-  on the left edge — gold for the account in use, green for one waiting to be applied.
-- **The account list is read-only; adding is the only thing left to do with it.**
-  The address could not be changed anyway ("remove it and add it again"), so the only
-  editable fields were the name, the LAN address and the type — a form that promised
-  more than it could deliver. Deleting is gone too: removing a profile can clear the
-  active account, i.e. rebuild the shell that is hosting the page. Both are the
-  console's job. The page shows what exists and can log a new account in; a row added
-  by mistake can be taken back (Undo) until Apply writes it.
+- **Settings → Quick config shows one card per account, and only adds them.** Name,
+  type, in-use state, remote/LAN address and user name in one block each, instead of
+  rows divided by a hairline. Editing and deleting moved to the console; an account
+  added by mistake can be undone until Apply.
 
 ### Fixed
 
-- **Leaving the LAN config page no longer kills the app.** The B handler worked — the
-  log shows `quick config: B, leaving the page`, the focus back on the settings row —
-  and then the app died in `~QuickConfig`, one line after `Tab QuickConfig: delete`:
-  `stopping the portal failed: Function not implemented`. That message is `ENOSYS`
-  from `pthread_detach`: `std::thread::detach()` does not exist on this libc, so
-  libstdc++ throws, and the joinable thread left behind terminates the process from
-  `~std::thread`. `stop()` joins both threads now — never detaches — and stays fast by
-  construction: the accept loop owns the listening socket and closes it on its next
-  100 ms tick (closing it from `stop()` freed the socket under a blocked `poll()`),
-  the service thread exits on the running flag, and a request waiting on the UI thread
-  gives up within 20 ms because the portal is marked stopping first. The page
-  destructor also catches, so no exception can leave it.
-- **B on that page no longer offers to close the app.** A button that nothing on the
-  focus chain claims reaches `AppletFrame`, whose B is `popContentView()` — with one
-  activity on the stack, a "close the app?" dialog followed by a quit. The page now
-  claims B itself (`willAppear()`, i.e. after `pushDetailView()` registered its own
-  handler, since `registerAction` keys on the button), and `AutoTabFrame` keeps a
-  hidden handler that pops the open detail stack wherever the focus happens to be —
-  including on the sidebar.
-- **B on that page no longer offers to close the app.** A button that nothing on the
-  focus chain claims reaches `AppletFrame`, whose B is `popContentView()` — with one
-  activity on the stack, a "close the app?" dialog followed by a quit. The page now
-  claims B itself (`willAppear()`, i.e. after `pushDetailView()` registered its own
-  handler, since `registerAction` keys on the button), and `AutoTabFrame` keeps a
-  hidden handler that pops the open detail stack wherever the focus happens to be —
-  including on the sidebar.
+- **B on that page leaves the page.** It used to fall through to the shell, which
+  offers to close the app — and the listener teardown that followed killed the
+  process.
+- **A crash log survives a relaunch.** It is rotated to `last-run.prev.log` at
+  startup instead of being erased by the restart needed to read it.
 
 ## [0.2.0] — 2026-11-25
 

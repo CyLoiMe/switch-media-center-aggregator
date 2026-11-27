@@ -54,7 +54,7 @@ include(${BOREALIS_LIBRARY}/cmake/toolchain.cmake)
 project(SMCA)  # short token for files/binaries/IDs; display name = "Switch Media Center Aggregator"
 set(VERSION_MAJOR "0")
 set(VERSION_MINOR "2")
-set(VERSION_ALTER "0")
+set(VERSION_ALTER "1")
 # Homebrew forwarder title ID, in the community forwarder range (05...), which is
 # outside Nintendo's commercial 01... space — so it cannot collide with an
 # official title, and no title-ID registry check is needed. The low 32 bits spell
