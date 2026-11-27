@@ -9,16 +9,21 @@
     anything else).
 
     Lifetime, because that is what usually goes wrong:
-      - the server owns a shared State; every thread holds a shared_ptr to it, so
-        `stop()` can return immediately and the state dies with the last thread;
-      - `stop()` only flips the running flag and detaches both threads. It does not
-        join (that would block a frame for a poll tick) and it does not close the
-        listening socket — the accept loop owns that fd and closes it when it wakes
-        (kAcceptPollMs). Closing a socket from another thread while it sits in
-        poll()/accept() is a data abort, not an error code: that is what killed the
-        app every time the portal page was left;
-      - the handler must therefore not depend on the server object still existing.
-        The portal passes a lambda over its singleton, which lives for the process.
+      - the server owns a shared State; every thread holds a shared_ptr to it, so a
+        request in flight can outlive `stop()`;
+      - `stop()` JOINS both threads and never detaches. `std::thread::detach()`
+        resolves to `pthread_detach`, which this libc does not implement (ENOSYS):
+        libstdc++ turns that into a throw, and a joinable thread left behind
+        terminates the process from its destructor. That is exactly how 0.2.0-3af2a5f3
+        closed the app when the portal page was left;
+      - the joins stay short by construction, not by hope: the accept loop owns the
+        listening socket and closes it on its next 100 ms tick (never `close()` it
+        from another thread — that frees the socket under a blocked poll()), the
+        service thread exits as soon as `running` goes false, and a request waiting
+        for the UI thread gives up within one 20 ms slice because `Portal::close()`
+        marks the portal stopping before it joins;
+      - the handler must not depend on the server object still existing. The portal
+        passes a lambda over its singleton, which lives for the process.
 */
 
 #pragma once

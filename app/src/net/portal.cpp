@@ -29,9 +29,6 @@ namespace {
 /// i.e. the one thing a script cannot do.
 constexpr int kMaxPinFailures = 5;
 constexpr int kIdleSeconds = 300;
-/// How long a request thread waits for the UI thread. Long enough for a config
-/// write, short enough that a hung UI does not hold the socket open.
-constexpr int kUiTimeoutMs = 5000;
 
 /// Seed material that cannot fail.
 ///
@@ -122,26 +119,6 @@ struct UiTask {
     bool done = false;
 };
 
-/// Runs `fn` on the UI thread and waits for it. False on timeout. `fn` must capture
-/// by value (or shared_ptr) — it may run after this function returns.
-bool runOnUi(std::function<void()> fn, int timeoutMs = kUiTimeoutMs) {
-    auto task = std::make_shared<UiTask>();
-    brls::sync([task, fn = std::move(fn)]() {
-        try {
-            fn();
-        } catch (const std::exception& ex) {
-            brls::Logger::warning("portal: UI command failed: {}", ex.what());
-        }
-        {
-            std::lock_guard<std::mutex> lock(task->mutex);
-            task->done = true;
-        }
-        task->cv.notify_all();
-    });
-    std::unique_lock<std::mutex> lock(task->mutex);
-    return task->cv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&task] { return task->done; });
-}
-
 // ---- i18n ----------------------------------------------------------------------
 //
 // The page follows the console's language, so the strings are read from the same
@@ -211,9 +188,51 @@ Portal& Portal::instance() {
 
 Portal::Portal() = default;
 
+Portal::~Portal() {
+    // Still open at exit (quit while the page was showing): `server_`'s destructor
+    // joins the request thread, and that thread may be waiting for a brls::sync task
+    // the main loop will never run again. Marking it stopping makes that wait end in
+    // one 20 ms slice instead of five seconds.
+    this->stopping_.store(true);
+}
+
+/// Runs `fn` on the UI thread and waits for it. False when it did not run. `fn` must
+/// capture by value (or shared_ptr) — it may run after this function returns.
+///
+/// The wait is sliced on purpose. `close()` runs on the UI thread and JOINS the
+/// request thread that is calling this, so a single 5 s wait here is a five-second
+/// frozen console: every slice re-checks `stopping_` and bails out, which lets the
+/// request thread return (with a 504), finish its socket and exit — i.e. lets the
+/// join complete in milliseconds instead of seconds.
+bool Portal::runOnUi(std::function<void()> fn, int timeoutMs) {
+    auto task = std::make_shared<UiTask>();
+    brls::sync([task, fn = std::move(fn)]() {
+        try {
+            fn();
+        } catch (const std::exception& ex) {
+            brls::Logger::warning("portal: UI command failed: {}", ex.what());
+        }
+        {
+            std::lock_guard<std::mutex> lock(task->mutex);
+            task->done = true;
+        }
+        task->cv.notify_all();
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    std::unique_lock<std::mutex> lock(task->mutex);
+    while (!task->done) {
+        if (this->stopping_.load(std::memory_order_relaxed)) return false;
+        if (task->cv.wait_for(lock, std::chrono::milliseconds(20), [&task] { return task->done; })) break;
+        if (std::chrono::steady_clock::now() > deadline) return false;
+    }
+    return true;
+}
+
 bool Portal::open() {
     if (this->server_.running()) return true;
 
+    this->stopping_.store(false);
     {
         std::lock_guard<std::mutex> lock(this->mutex);
         this->phase_ = Phase::Idle;
@@ -239,6 +258,11 @@ bool Portal::open() {
 }
 
 void Portal::close() {
+    // Set before stopping: a request thread waiting for the UI thread has to see it
+    // and give up, because the UI thread is the one waiting for that thread to
+    // finish (stop() joins it) and it cannot run the queued brls::sync task while
+    // it waits.
+    this->stopping_.store(true);
     this->server_.stop();
     {
         std::lock_guard<std::mutex> lock(this->mutex);
@@ -249,6 +273,7 @@ void Portal::close() {
         this->failures_ = 0;
     }
     this->draft_.clear();
+    this->stopping_.store(false);
 }
 
 bool Portal::running() const { return this->server_.running(); }

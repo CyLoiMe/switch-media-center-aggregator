@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <mutex>
@@ -90,16 +91,27 @@ public:
 
 private:
     Portal();
+    /// At exit, with the page still open: letting a waiting request give up keeps
+    /// the listener's teardown from stalling the process for its 5 s budget.
+    ~Portal();
     Portal(const Portal&) = delete;
     Portal& operator=(const Portal&) = delete;
 
     Response handle(const Request& req);
+    /// Runs `fn` on the UI thread and waits for it. False when it did not run: the
+    /// wait is sliced and gives up as soon as the portal is closing, because
+    /// `close()` joins the request thread — a request parked in a 5 s wait for a UI
+    /// task that will never run would freeze the console for 5 s.
+    bool runOnUi(std::function<void()> fn, int timeoutMs = 5000);
     /// Constant-time check of the session cookie; refreshes the idle timer.
     bool authed(const Request& req);
     /// Must run on the UI thread (the page's A button and the marshalled web call).
     bool applyNow();
 
     mutable std::mutex mutex;
+    /// True from the first line of close() until the listener is gone: it is what
+    /// lets a request thread stop waiting for the UI thread that is waiting for it.
+    std::atomic<bool> stopping_{false};
     Phase phase_ = Phase::Idle;
     std::string pin_;
     std::string session_;

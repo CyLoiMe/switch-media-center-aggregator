@@ -19,14 +19,25 @@
 
 ### Fixed
 
-- **Leaving the LAN config page no longer kills the app.** The page's own B handler
-  ran and popped it (the log says `quick config: B, leaving the page` and the focus
-  went back to the settings row), and then the app died in `~QuickConfig`:
-  `HttpServer::stop()` closed the listening socket while the accept loop was inside
-  `poll()`/`accept()` on that very fd, and on libnx that frees the socket under a
-  blocked call. It also joined that thread, which blocks a frame. `stop()` now waits
-  for nothing: the accept loop owns the socket and closes it on its next tick, both
-  threads are detached, and the page destructor cannot let an exception escape.
+- **Leaving the LAN config page no longer kills the app.** The B handler worked — the
+  log shows `quick config: B, leaving the page`, the focus back on the settings row —
+  and then the app died in `~QuickConfig`, one line after `Tab QuickConfig: delete`:
+  `stopping the portal failed: Function not implemented`. That message is `ENOSYS`
+  from `pthread_detach`: `std::thread::detach()` does not exist on this libc, so
+  libstdc++ throws, and the joinable thread left behind terminates the process from
+  `~std::thread`. `stop()` joins both threads now — never detaches — and stays fast by
+  construction: the accept loop owns the listening socket and closes it on its next
+  100 ms tick (closing it from `stop()` freed the socket under a blocked `poll()`),
+  the service thread exits on the running flag, and a request waiting on the UI thread
+  gives up within 20 ms because the portal is marked stopping first. The page
+  destructor also catches, so no exception can leave it.
+- **B on that page no longer offers to close the app.** A button that nothing on the
+  focus chain claims reaches `AppletFrame`, whose B is `popContentView()` — with one
+  activity on the stack, a "close the app?" dialog followed by a quit. The page now
+  claims B itself (`willAppear()`, i.e. after `pushDetailView()` registered its own
+  handler, since `registerAction` keys on the button), and `AutoTabFrame` keeps a
+  hidden handler that pops the open detail stack wherever the focus happens to be —
+  including on the sidebar.
 - **B on that page no longer offers to close the app.** A button that nothing on the
   focus chain claims reaches `AppletFrame`, whose B is `popContentView()` — with one
   activity on the stack, a "close the app?" dialog followed by a quit. The page now
